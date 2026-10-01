@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0d14">
+  <title>QuestCast &bull; Meta Quest 2 Live Receiver</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container" id="appContainer">
+    <!-- Top Header Bar -->
+    <header class="top-nav" id="topNav">
+      <div class="brand">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 8h16a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-4l-2 2-2-2H4a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z"></path>
+          <circle cx="8" cy="13" r="2"></circle>
+          <circle cx="16" cy="13" r="2"></circle>
+        </svg>
+        <span class="brand-title">QuestCast</span>
+        <span class="badge" id="statusBadge">Connecting...</span>
+      </div>
+
+      <div class="hud-stats" id="hudStats">
+        <span class="stat-pill" id="resStat">0 &times; 0</span>
+        <span class="stat-pill" id="fpsStat">0 FPS</span>
+        <span class="stat-pill" id="bitrateStat">0 kbps</span>
+      </div>
+
+      <div class="nav-actions">
+        <!-- Push-to-Talk (PTT) Intercom Button -->
+        <button id="btnPtt" class="control-btn ptt-btn" title="Push to Talk: Hold to speak directly through Quest headset" aria-label="Push To Talk">
+          <svg class="icon mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+          <span id="pttText">Push to Talk</span>
+        </button>
+
+        <!-- Audit Log Viewer Button -->
+        <button id="btnAuditLog" class="control-btn" title="Game Activity & Audit Log (App & Date Based)" aria-label="Audit Log">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+        </button>
+
+        <!-- Audio Mute/Unmute -->
+        <button id="btnSound" class="control-btn" title="Toggle Sound" aria-label="Toggle Sound">
+          <svg id="iconSoundOn" class="icon hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          </svg>
+          <svg id="iconSoundOff" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <line x1="23" y1="9" x2="17" y2="15"></line>
+            <line x1="17" y1="9" x2="23" y2="15"></line>
+          </svg>
+        </button>
+
+        <!-- 4-Station Dashboard Link -->
+        <a href="dashboard.html" class="control-btn" title="4-Station Multi-View Grid" aria-label="4-Station Grid" style="text-decoration:none;">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+        </a>
+
+        <!-- Reconnect Button -->
+        <button id="btnReconnect" class="control-btn" title="Reconnect" aria-label="Reconnect">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+          </svg>
+        </button>
+
+        <!-- Fullscreen Button -->
+        <button id="btnFullscreen" class="control-btn" title="Fullscreen" aria-label="Fullscreen">
+          <svg id="iconExpand" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+          </svg>
+          <svg id="iconCompress" class="icon hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Video Stage -->
+    <main class="video-stage">
+      <video id="remoteVideo" autoplay playsinline muted></video>
+
+      <!-- Floating Exit Fullscreen Button (Visible only in fullscreen, auto-fading) -->
+      <button id="btnExitFullscreen" class="floating-exit-btn hidden" title="Exit Fullscreen" aria-label="Exit Fullscreen">
+        <svg class="exit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+        <span>Exit Fullscreen</span>
+      </button>
+
+      <!-- PTT Live HUD (Visible on screen while talking to player) -->
+      <div id="pttFloatingIndicator" class="ptt-floating-hud hidden">
+        <div class="ptt-pulse-dot"></div>
+        <span>MIC LIVE &bull; Talking to Quest Headset</span>
+      </div>
+
+      <!-- Overlay for connecting / loading state -->
+      <div class="overlay-card" id="overlayCard">
+        <div class="spinner" id="spinner"></div>
+        <h2 id="overlayTitle">Connecting to QuestCast...</h2>
+        <p id="overlayMessage">Awaiting WebRTC video stream from Meta Quest 2 on local Wi-Fi.</p>
+        <button id="btnRetryManual" class="btn btn-primary hidden">Retry Connection</button>
+      </div>
+    </main>
+
+    <!-- TV / Remote Bar -->
+    <footer class="bottom-hint" id="bottomHint">
+      <span>Meta Quest 2 &bull; Direct Hardware H.264 &bull; Push-to-Talk Intercom &bull; Zero Cloud Latency</span>
+    </footer>
+  </div>
+
+  <!-- App-Based & Date-Based Audit Log Modal -->
+  <div class="modal-backdrop hidden" id="modalAuditLog">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+          VR Game Activity & Audit Logs
+        </h3>
+        <button id="btnCloseAuditModal" class="control-btn" style="width:32px; height:32px;">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Top Metrics Overview -->
+        <div class="metrics-row" id="auditMetricsRow">
+          <div class="metric-pill">
+            <div class="metric-val" id="metricTotalTime">0m</div>
+            <div class="metric-lbl">Total Play Time</div>
+          </div>
+          <div class="metric-pill">
+            <div class="metric-val" id="metricTotalSessions">0</div>
+            <div class="metric-lbl">Total Sessions</div>
+          </div>
+          <div class="metric-pill">
+            <div class="metric-val" id="metricAppsCount">0</div>
+            <div class="metric-lbl">Games Tracked</div>
+          </div>
+          <div class="metric-pill">
+            <div class="metric-val" id="metricActiveApp">None</div>
+            <div class="metric-lbl">Active Now</div>
+          </div>
+        </div>
+
+        <!-- View Mode Tabs -->
+        <div class="view-tabs">
+          <button class="tab-btn active" id="tabByApp">By App / Game</button>
+          <button class="tab-btn" id="tabByDate">By Date</button>
+          <button class="tab-btn" id="tabRawSessions">All Sessions</button>
+        </div>
+
+        <!-- Filter Controls -->
+        <div class="filter-bar">
+          <div class="filter-group">
+            <label style="font-size:0.8rem; color:var(--text-dim);">Date:</label>
+            <select class="filter-select" id="filterDateSelect">
+              <option value="">All Dates</option>
+            </select>
+
+            <label style="font-size:0.8rem; color:var(--text-dim); margin-left:8px;">Game:</label>
+            <select class="filter-select" id="filterAppSelect">
+              <option value="">All Games</option>
+            </select>
+          </div>
+
+          <div style="display:flex; gap:8px;">
+            <button id="btnExportCsv" class="btn" style="padding:6px 14px; font-size:0.85rem; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); color:var(--accent-green);">
+              Export CSV
+            </button>
+            <button id="btnClearLog" class="btn" style="padding:6px 12px; font-size:0.85rem; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.25); color:var(--accent-red);">
+              Clear Log
+            </button>
+          </div>
+        </div>
+
+        <!-- Dynamic Content Container -->
+        <div id="auditContent">
+          <p style="color:var(--text-dim); text-align:center; padding:20px;">Loading audit data...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
