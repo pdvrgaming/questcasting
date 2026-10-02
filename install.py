@@ -21,6 +21,14 @@ import re
 import argparse
 from pathlib import Path
 
+# Ensure Windows terminal doesn't crash on character encodings
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # ANSI colors for nice terminal output
 CYAN = "\033[96m"
 GREEN = "\033[92m"
@@ -181,37 +189,42 @@ def install_and_configure_headset(device):
     else:
         print(f"{YELLOW}[!] Wi-Fi IP not detected (ensure headset is connected to Wi-Fi){RESET}")
 
-    # 2. Enable Wireless ADB (port 5555)
-    print(f"[*] Enabling Wireless ADB port (5555)...")
-    code, out, _ = run_adb("tcpip 5555", serial=serial)
-    if "restarting in TCP mode" in out or code == 0:
-        print(f"{GREEN}[+] Wireless ADB enabled!{RESET}")
-
-    # 3. Install APK
+    # 2. Install APK (Done first before any port switches)
     print(f"[*] Installing {APK_PATH.name}...")
-    code, out, err = run_adb(f'install -r "{APK_PATH}"', serial=serial, timeout=90)
-    if "Success" in out:
-        print(f"{GREEN}[+] Installation Successful!{RESET}")
-    else:
-        print(f"{RED}[-] Install result: {out} {err}{RESET}")
-        return False
+    for attempt in range(1, 4):
+        code, out, err = run_adb(f'install -r "{APK_PATH}"', serial=serial, timeout=90)
+        if "Success" in out:
+            print(f"{GREEN}[+] Installation Successful!{RESET}")
+            break
+        elif "device" in err.lower() or "not found" in err.lower() or "offline" in err.lower():
+            print(f"{YELLOW}[!] Device busy or re-enumerating, waiting (attempt {attempt}/3)...{RESET}")
+            run_adb("wait-for-device", serial=serial, timeout=10)
+            time.sleep(1.5)
+        else:
+            print(f"{RED}[-] Install result: {out} {err}{RESET}")
+            if attempt == 3:
+                return False
 
-    # 4. Grant Runtime Permissions (Avoids VR popups)
+    # 3. Grant Runtime Permissions (Avoids VR popups)
     print(f"[*] Auto-granting permissions...")
-    # Audio for Push-to-Talk
     run_adb(f"shell pm grant {PACKAGE_NAME} android.permission.RECORD_AUDIO", serial=serial)
-    # Notifications
     run_adb(f"shell pm grant {PACKAGE_NAME} android.permission.POST_NOTIFICATIONS", serial=serial)
-    # App Usage Stats (For Automatic VR Game Audit Tracking: Beat Saber, Jurassic World, etc.)
     run_adb(f"shell appops set {PACKAGE_NAME} GET_USAGE_STATS allow", serial=serial)
     print(f"{GREEN}[+] Permissions granted (Mic + Audit Log Usage Stats).{RESET}")
 
-    # 5. Launch App
+    # 4. Launch App
     print(f"[*] Launching QuestCast...")
     run_adb(f"shell monkey -p {PACKAGE_NAME} -c android.intent.category.LAUNCHER 1", serial=serial)
 
+    # 5. Enable Wireless ADB (port 5555) at the very end
+    if not serial.startswith("192.168."):
+        print(f"[*] Enabling Wireless ADB port (5555)...")
+        run_adb("tcpip 5555", serial=serial)
+        time.sleep(1.0)
+        print(f"{GREEN}[+] Wireless ADB enabled!{RESET}")
+
     # 6. Display Casting URLs
-    print(f"\n{BOLD}{GREEN}✓ Headset Ready to Cast!{RESET}")
+    print(f"\n{BOLD}{GREEN}[OK] Headset Configured and Ready to Cast!{RESET}")
     if ip:
         print(f"  {BOLD}Dashboard URL:{RESET}  {CYAN}http://{ip}:8080/dashboard.html{RESET}")
         print(f"  {BOLD}Secure URL:{RESET}     {CYAN}https://{ip}:8443/dashboard.html{RESET} (Enables Push-to-Talk Mic)")
@@ -240,10 +253,10 @@ def main():
     args = parser.parse_args()
 
     print(f"{BOLD}{CYAN}")
-    print("╔══════════════════════════════════════════════════════════╗")
-    print("║          QuestCast Automated Headset Installer           ║")
-    print("║        Zero-Configuration Multi-Device Deployment        ║")
-    print("╚══════════════════════════════════════════════════════════╝")
+    print("+==========================================================+")
+    print("|          QuestCast Automated Headset Installer           |")
+    print("|        Zero-Configuration Multi-Device Deployment        |")
+    print("+==========================================================+")
     print(f"{RESET}")
     print(f"[*] Using ADB: {DIM}{ADB}{RESET}")
     print(f"[*] Target APK: {DIM}{APK_PATH}{RESET}\n")
@@ -272,7 +285,7 @@ def main():
     count, installed = process_connected()
 
     if not args.loop and count > 0:
-        print(f"\n{BOLD}{GREEN}[✓] Finished installing on {installed} connected headset(s).{RESET}")
+        print(f"\n{BOLD}{GREEN}[OK] Finished installing on {installed} connected headset(s).{RESET}")
         print(f"{CYAN}To install on additional headsets with one cable, run:{RESET} {BOLD}python install.py --loop{RESET}\n")
         return
 
@@ -293,7 +306,7 @@ def main():
                     installed_serials.add(serial)
                     print(f"\n{YELLOW}[*] Plug in your NEXT headset, or press Ctrl+C when finished.{RESET}")
     except KeyboardInterrupt:
-        print(f"\n\n{GREEN}[✓] Installer exited. Total headsets configured: {len(installed_serials)}{RESET}")
+        print(f"\n\n{GREEN}[OK] Installer exited. Total headsets configured: {len(installed_serials)}{RESET}")
 
 
 if __name__ == "__main__":
