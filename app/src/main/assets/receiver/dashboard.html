@@ -723,6 +723,7 @@
       let hostWsConnected = false;
       const relayCallbacks = {};
       const relayStatusCallbacks = {};
+      const pendingHostSignaling = [];
 
       // Shared Audio Context for Push-to-Talk (PTT)
       let pttAudioContext = null;
@@ -753,6 +754,8 @@
           hostWs.onopen = () => {
             hostWsConnected = true;
             console.log('[QuestCast Hub] Host WebSocket connected to', currentHost);
+            // Request fresh offer from host
+            hostWs.send(JSON.stringify({ type: 'request_offer' }));
             // Re-open relay tunnels for any remote stations currently on the grid
             stations.forEach(st => {
               if (!st.isSelf && st.ip !== currentHost) {
@@ -776,6 +779,8 @@
                   const selfClient = Object.values(activeClients).find(c => c.isSelf);
                   if (selfClient && selfClient.onSignaling) {
                     selfClient.onSignaling(msg);
+                  } else {
+                    pendingHostSignaling.push(msg);
                   }
                 }
               }
@@ -1116,7 +1121,11 @@
 
         function initPC() {
           if (pc) try { pc.close(); } catch (_) {}
-          pc = new RTCPeerConnection({ iceServers: [] });
+          pc = new RTCPeerConnection({
+            iceServers: [],
+            bundlePolicy: 'max-bundle',
+            rtcpMuxPolicy: 'require'
+          });
 
           pc.onicecandidate = (e) => {
             if (e.candidate) {
@@ -1139,10 +1148,21 @@
             isConnected = true;
           };
 
+          pc.oniceconnectionstatechange = () => {
+            if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+              if (dot) dot.className = 'status-dot online';
+              if (overlay) overlay.classList.add('hidden');
+              video.play().catch(() => {});
+              isConnected = true;
+            }
+          };
+
           pc.onconnectionstatechange = () => {
             if (pc.connectionState === 'connected') {
               if (dot) dot.className = 'status-dot online';
               if (overlay) overlay.classList.add('hidden');
+              video.play().catch(() => {});
+              isConnected = true;
             } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
               if (dot) dot.className = 'status-dot';
               if (overlay) overlay.classList.remove('hidden');
@@ -1187,9 +1207,14 @@
             get isConnected() { return isConnected; }
           };
 
+          // Drain any buffered host signaling messages!
+          while (pendingHostSignaling.length > 0) {
+            handleSignaling(pendingHostSignaling.shift());
+          }
+
           // Trigger offer exchange if hostWs is already open
           if (hostWs && hostWs.readyState === WebSocket.OPEN) {
-            hostWs.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+            hostWs.send(JSON.stringify({ type: 'request_offer' }));
           }
         } else {
           // Remote Station -> Tunnel through Host WebSocket Relay
@@ -1202,6 +1227,8 @@
           relayStatusCallbacks[stationKey] = (status) => {
             if (status === 'connected') {
               if (dot) dot.className = 'status-dot connecting';
+              // Request offer from remote station
+              sendToStation(st, JSON.stringify({ type: 'request_offer' }));
             } else if (status === 'disconnected') {
               if (dot) dot.className = 'status-dot';
               if (overlay) overlay.classList.remove('hidden');
@@ -1513,7 +1540,20 @@
 
       btnCloseAuditModal.addEventListener('click', () => modalAuditLog.classList.add('hidden'));
 
-      // Initial Startup: Connect to host WebSocket and start dynamic LAN Auto-Discovery
+      // Initial Startup: Immediately render Host station on grid, connect WebSocket & start LAN Auto-Discovery
+      stations = [{
+        id: 'host',
+        name: `Quest 2 (${currentHost})`,
+        ip: currentHost,
+        isSelf: true,
+        httpPort: 8080,
+        httpsPort: 8443,
+        wsPort: 8088,
+        wssPort: 8089,
+        currentGame: 'Standby'
+      }];
+      renderGrid();
+
       initHostWebSocket();
       autoDiscoverStations();
       setInterval(autoDiscoverStations, 3000);

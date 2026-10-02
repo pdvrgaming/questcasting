@@ -26,6 +26,7 @@ class SignalingServer(
         fun onOfferReceived(conn: WebSocket, sdp: String)
         fun onAnswerReceived(conn: WebSocket, sdp: String)
         fun onIceCandidateReceived(conn: WebSocket, candidate: String, sdpMid: String?, sdpMLineIndex: Int)
+        fun onRequestOffer(conn: WebSocket) {}
         fun onPttAudioReceived(conn: WebSocket, pcmBytes: ByteArray) {}
         fun onPttStarted(conn: WebSocket) {}
         fun onPttStopped(conn: WebSocket) {}
@@ -75,6 +76,10 @@ class SignalingServer(
                 is SignalingMessage.Offer -> {
                     Log.i(TAG, "QuestCast: received offer from receiver")
                     listener.onOfferReceived(conn, parsed.sdp)
+                }
+                is SignalingMessage.RequestOffer -> {
+                    Log.i(TAG, "QuestCast: received request_offer from receiver")
+                    listener.onRequestOffer(conn)
                 }
                 is SignalingMessage.Answer -> {
                     Log.i(TAG, "QuestCast: received answer from receiver")

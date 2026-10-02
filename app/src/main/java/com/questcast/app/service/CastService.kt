@@ -251,10 +251,15 @@ class CastService : Service() {
                 val isCharging = bm?.isCharging ?: false
                 val d = _diagnostics.value
                 val curApp = appTrackerManager?.currentApp?.value
-                val serial = Build.SERIAL.takeIf { it != Build.UNKNOWN } ?: Build.MODEL
+                val androidId = try {
+                    android.provider.Settings.Secure.getString(contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: ""
+                } catch (_: Exception) { "" }
+                val uniqueSuffix = if (androidId.isNotBlank()) androidId.takeLast(4).uppercase() else ip.substringAfterLast('.')
+                val uniqueId = if (androidId.isNotBlank()) "quest_$androidId" else "quest_${ip.replace('.', '_')}"
+                val defaultStationName = "Quest 2 ($uniqueSuffix)"
                 val prefs = getSharedPreferences("questcast_prefs", Context.MODE_PRIVATE)
-                val stationName = prefs.getString("station_name", "Quest 2 (${serial.takeLast(4)})") ?: "Quest 2 (${serial.takeLast(4)})"
-                """{"stationName":"$stationName","model":"${Build.MODEL}","serial":"$serial","battery":$batteryPct,"isCharging":$isCharging,"ip":"${d.ipAddress}","httpPort":${config.httpPort},"httpsPort":${config.httpsPort},"wsPort":${config.wsPort},"wssPort":${config.wssPort},"state":"${d.state}","currentGame":"${curApp?.appName ?: "Standby"}","receivers":${clientToSocket.size}}"""
+                val stationName = prefs.getString("station_name", defaultStationName) ?: defaultStationName
+                """{"stationName":"$stationName","model":"${Build.MODEL}","serial":"$uniqueId","battery":$batteryPct,"isCharging":$isCharging,"ip":"${d.ipAddress}","httpPort":${config.httpPort},"httpsPort":${config.httpsPort},"wsPort":${config.wsPort},"wssPort":${config.wssPort},"state":"${d.state}","currentGame":"${curApp?.appName ?: "Standby"}","receivers":${clientToSocket.size}}"""
             }
             val auditClearHandler: () -> Unit = {
                 appTrackerManager?.clearAuditLog()
@@ -264,14 +269,19 @@ class CastService : Service() {
             signalingRelayManager = com.questcast.app.server.SignalingRelayManager()
 
             // 0e. Initialize LAN Auto-Discovery Manager
-            val serial = Build.SERIAL.takeIf { it != Build.UNKNOWN } ?: Build.MODEL
+            val androidId = try {
+                android.provider.Settings.Secure.getString(contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: ""
+            } catch (_: Exception) { "" }
+            val uniqueSuffix = if (androidId.isNotBlank()) androidId.takeLast(4).uppercase() else ip.substringAfterLast('.')
+            val uniqueId = if (androidId.isNotBlank()) "quest_$androidId" else "quest_${ip.replace('.', '_')}"
+            val defaultStationName = "Quest 2 ($uniqueSuffix)"
             val prefs = getSharedPreferences("questcast_prefs", Context.MODE_PRIVATE)
-            val stationName = prefs.getString("station_name", "Quest 2 (${serial.takeLast(4)})") ?: "Quest 2 (${serial.takeLast(4)})"
+            val stationName = prefs.getString("station_name", defaultStationName) ?: defaultStationName
             val bm = getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
 
             lanDiscoveryManager = com.questcast.app.discovery.LanDiscoveryManager(
                 context = applicationContext,
-                selfId = serial,
+                selfId = uniqueId,
                 selfName = stationName,
                 httpPort = config.httpPort,
                 httpsPort = config.httpsPort,
@@ -373,6 +383,13 @@ class CastService : Service() {
                     val clientId = socketToClient[conn] ?: return
                     Log.d(TAG, "QuestCast: ICE candidate from receiver (clientId=$clientId)")
                     webRtcManager?.addRemoteIceCandidate(clientId, candidate, sdpMid, sdpMLineIndex)
+                }
+
+                override fun onRequestOffer(conn: WebSocket) {
+                    val clientId = socketToClient[conn] ?: return
+                    Log.i(TAG, "QuestCast: client requested new WebRTC offer (clientId=$clientId)")
+                    webRtcManager?.createPeerConnection(clientId)
+                    webRtcManager?.createAndSendOffer(clientId)
                 }
 
                 override fun onPttAudioReceived(conn: WebSocket, pcmBytes: ByteArray) {

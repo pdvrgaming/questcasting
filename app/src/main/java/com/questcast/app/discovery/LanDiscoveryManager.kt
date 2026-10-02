@@ -2,11 +2,11 @@ package com.questcast.app.discovery
 
 import android.content.Context
 import android.net.wifi.WifiManager
-import android.os.Build
 import com.questcast.app.util.AppLogger as Log
 import com.questcast.app.util.NetworkUtils
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.InputStreamReader
 import java.net.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -57,7 +57,7 @@ class LanDiscoveryManager(
         private const val TAG = "QuestCast"
         const val DISCOVERY_PORT = 8889
         private const val BEACON_INTERVAL_MS = 2000L
-        private const val PEER_EXPIRATION_MS = 9000L
+        private const val PEER_EXPIRATION_MS = 16000L
     }
 
     private val isRunning = AtomicBoolean(false)
@@ -66,6 +66,7 @@ class LanDiscoveryManager(
     private var senderSocket: DatagramSocket? = null
     private var scheduler: ScheduledExecutorService? = null
     private var receiverThread: Thread? = null
+    private var lastSubnetProbeTime = 0L
 
     private val discoveredPeers = ConcurrentHashMap<String, DiscoveredStation>()
 
@@ -74,7 +75,7 @@ class LanDiscoveryManager(
         if (isRunning.get()) return
         isRunning.set(true)
 
-        Log.i(TAG, "QuestCast: Starting LAN Auto-Discovery on UDP port $DISCOVERY_PORT")
+        Log.i(TAG, "QuestCast: Starting LAN Auto-Discovery (UDP port $DISCOVERY_PORT, selfId=$selfId, name=$selfName)")
 
         // 1. Acquire Wi-Fi Multicast lock so Android Wi-Fi chipset receives broadcast packets
         try {
@@ -90,14 +91,15 @@ class LanDiscoveryManager(
         // 2. Start UDP Receiver
         startReceiver()
 
-        // 3. Start Periodic Beacon Broadcast & Peer Cleanup
+        // 3. Start Periodic Beacon Broadcast, Subnet Probing & Peer Cleanup
         scheduler = Executors.newSingleThreadScheduledExecutor().apply {
             scheduleAtFixedRate({
                 try {
                     sendBeacon()
+                    maybeProbeSubnet()
                     pruneStalePeers()
                 } catch (e: Exception) {
-                    Log.d(TAG, "QuestCast: Discovery beacon error: ${e.message}")
+                    Log.d(TAG, "QuestCast: Discovery loop error: ${e.message}")
                 }
             }, 500, BEACON_INTERVAL_MS, TimeUnit.MILLISECONDS)
         }
@@ -179,18 +181,20 @@ class LanDiscoveryManager(
         try {
             if (!rawMsg.startsWith("{\"questcast\":")) return
             val json = JSONObject(rawMsg)
-            val peerId = json.optString("id")
             val peerIp = json.optString("ip", senderIp)
 
             val myIp = NetworkUtils.getLocalIpAddress()
-            // Ignore beacons from ourselves
-            if (peerId == selfId || peerIp == myIp) {
+            // Ignore beacons from ourselves (compare IP)
+            if (peerIp == myIp || peerIp == "127.0.0.1" || peerIp.isBlank()) {
                 return
             }
 
+            val peerId = json.optString("id").takeIf { it.isNotBlank() && it != "unknown" } ?: "quest_${peerIp.replace('.', '_')}"
+            val name = json.optString("name", "Quest 2 ($peerIp)")
+
             val station = DiscoveredStation(
                 id = peerId,
-                name = json.optString("name", "Quest 2 ($peerIp)"),
+                name = name,
                 ip = peerIp,
                 httpPort = json.optInt("httpPort", 8080),
                 httpsPort = json.optInt("httpsPort", 8443),
@@ -202,11 +206,11 @@ class LanDiscoveryManager(
                 lastSeenTimestamp = System.currentTimeMillis()
             )
 
-            val isNew = !discoveredPeers.containsKey(peerId)
-            discoveredPeers[peerId] = station
+            val isNew = !discoveredPeers.containsKey(peerIp)
+            discoveredPeers[peerIp] = station
 
             if (isNew) {
-                Log.i(TAG, "QuestCast: [Auto-Discovery] Discovered new Quest headset: ${station.name} @ ${station.ip}")
+                Log.i(TAG, "QuestCast: [Auto-Discovery] Discovered new Quest headset via UDP: ${station.name} @ $peerIp")
             }
         } catch (_: Exception) {}
     }
@@ -259,6 +263,87 @@ class LanDiscoveryManager(
                     socket.send(subnetPacket)
                 } catch (_: Exception) {}
             }
+        } catch (_: Exception) {}
+
+        // 3. Direct Unicast to any already known peers
+        for (peerIp in discoveredPeers.keys) {
+            try {
+                val peerAddr = InetAddress.getByName(peerIp)
+                val unicastPacket = DatagramPacket(bytes, bytes.size, peerAddr, DISCOVERY_PORT)
+                socket.send(unicastPacket)
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun maybeProbeSubnet() {
+        val now = System.currentTimeMillis()
+        if (now - lastSubnetProbeTime < 8000L) return
+        lastSubnetProbeTime = now
+
+        Thread({
+            try {
+                val myIp = NetworkUtils.getLocalIpAddress()
+                if (myIp == "127.0.0.1" || myIp.isBlank() || !myIp.contains('.')) return@Thread
+                val subnetPrefix = myIp.substringBeforeLast('.') + "."
+                val myLastOctet = myIp.substringAfterLast('.').toIntOrNull() ?: -1
+
+                val probePool = Executors.newFixedThreadPool(16)
+                for (i in 1..254) {
+                    if (i == myLastOctet) continue
+                    val targetIp = "$subnetPrefix$i"
+                    probePool.execute {
+                        try {
+                            val s = Socket()
+                            s.connect(InetSocketAddress(targetIp, httpPort), 300)
+                            s.close()
+                            // Port 8080 reachable, verify if it's a QuestCast station
+                            fetchPeerStationHttp(targetIp)
+                        } catch (_: Exception) {}
+                    }
+                }
+                probePool.shutdown()
+                probePool.awaitTermination(3, TimeUnit.SECONDS)
+            } catch (_: Exception) {}
+        }, "QuestCast-SubnetProber").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun fetchPeerStationHttp(targetIp: String) {
+        try {
+            val url = URL("http://$targetIp:$httpPort/api/device-info")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                connectTimeout = 800
+                readTimeout = 800
+                requestMethod = "GET"
+            }
+            if (conn.responseCode == 200) {
+                val text = InputStreamReader(conn.inputStream, Charsets.UTF_8).readText()
+                val json = JSONObject(text)
+                val peerId = json.optString("serial").takeIf { it.isNotBlank() && it != "unknown" } ?: "quest_${targetIp.replace('.', '_')}"
+                val name = json.optString("stationName", "Quest 2 ($targetIp)")
+                val station = DiscoveredStation(
+                    id = peerId,
+                    name = name,
+                    ip = targetIp,
+                    httpPort = json.optInt("httpPort", 8080),
+                    httpsPort = json.optInt("httpsPort", 8443),
+                    wsPort = json.optInt("wsPort", 8088),
+                    wssPort = json.optInt("wssPort", 8089),
+                    currentGame = json.optString("currentGame", "Standby"),
+                    battery = json.optInt("battery", -1),
+                    isSelf = false,
+                    lastSeenTimestamp = System.currentTimeMillis()
+                )
+
+                val isNew = !discoveredPeers.containsKey(targetIp)
+                discoveredPeers[targetIp] = station
+                if (isNew) {
+                    Log.i(TAG, "QuestCast: [Auto-Discovery] Discovered new Quest headset via HTTP Subnet Probe: ${station.name} @ $targetIp")
+                }
+            }
+            conn.disconnect()
         } catch (_: Exception) {}
     }
 

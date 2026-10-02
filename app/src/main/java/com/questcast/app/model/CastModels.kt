@@ -63,6 +63,7 @@ sealed class SignalingMessage {
     data class PttAudio(val audioBase64: String) : SignalingMessage()
     object PttStart : SignalingMessage()
     object PttStop : SignalingMessage()
+    object RequestOffer : SignalingMessage()
     data class Unknown(val raw: String) : SignalingMessage()
 
     fun toJson(): String {
@@ -113,6 +114,9 @@ sealed class SignalingMessage {
             is PttStop -> {
                 json.put("type", "ptt_stop")
             }
+            is RequestOffer -> {
+                json.put("type", "request_offer")
+            }
             is Unknown -> {
                 return raw
             }
@@ -139,6 +143,7 @@ sealed class SignalingMessage {
                         val sdp = json.optString("sdp", "")
                         Answer(sdp)
                     }
+                    "request_offer" -> RequestOffer
                     "ice" -> {
                         if (json.has("candidate")) {
                             val candidateVal = json.get("candidate")
