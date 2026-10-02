@@ -67,6 +67,9 @@ class CastService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
+    private var lanDiscoveryManager: com.questcast.app.discovery.LanDiscoveryManager? = null
+    private var signalingRelayManager: com.questcast.app.server.SignalingRelayManager? = null
+
     private var config = CastConfig()
     private val clientToSocket = java.util.concurrent.ConcurrentHashMap<String, WebSocket>()
     private val socketToClient = java.util.concurrent.ConcurrentHashMap<WebSocket, String>()
@@ -250,11 +253,38 @@ class CastService : Service() {
                 val curApp = appTrackerManager?.currentApp?.value
                 val serial = Build.SERIAL.takeIf { it != Build.UNKNOWN } ?: Build.MODEL
                 val prefs = getSharedPreferences("questcast_prefs", Context.MODE_PRIVATE)
-                val stationName = prefs.getString("station_name", "Station 1 - ${Build.MODEL}") ?: "Station 1"
+                val stationName = prefs.getString("station_name", "Quest 2 (${serial.takeLast(4)})") ?: "Quest 2 (${serial.takeLast(4)})"
                 """{"stationName":"$stationName","model":"${Build.MODEL}","serial":"$serial","battery":$batteryPct,"isCharging":$isCharging,"ip":"${d.ipAddress}","httpPort":${config.httpPort},"httpsPort":${config.httpsPort},"wsPort":${config.wsPort},"wssPort":${config.wssPort},"state":"${d.state}","currentGame":"${curApp?.appName ?: "Standby"}","receivers":${clientToSocket.size}}"""
             }
             val auditClearHandler: () -> Unit = {
                 appTrackerManager?.clearAuditLog()
+            }
+
+            // 0d. Initialize Signaling Relay Manager for cross-headset tunneling
+            signalingRelayManager = com.questcast.app.server.SignalingRelayManager()
+
+            // 0e. Initialize LAN Auto-Discovery Manager
+            val serial = Build.SERIAL.takeIf { it != Build.UNKNOWN } ?: Build.MODEL
+            val prefs = getSharedPreferences("questcast_prefs", Context.MODE_PRIVATE)
+            val stationName = prefs.getString("station_name", "Quest 2 (${serial.takeLast(4)})") ?: "Quest 2 (${serial.takeLast(4)})"
+            val bm = getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+
+            lanDiscoveryManager = com.questcast.app.discovery.LanDiscoveryManager(
+                context = applicationContext,
+                selfId = serial,
+                selfName = stationName,
+                httpPort = config.httpPort,
+                httpsPort = config.httpsPort,
+                wsPort = config.wsPort,
+                wssPort = config.wssPort,
+                currentGameProvider = { appTrackerManager?.currentApp?.value?.appName ?: "Standby" },
+                batteryProvider = { bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1 }
+            ).apply {
+                start()
+            }
+
+            val stationsProvider: () -> String = {
+                lanDiscoveryManager?.getStationsJson() ?: "[]"
             }
 
             // 1. Start HTTP Server (port 8080)
@@ -265,7 +295,8 @@ class CastService : Service() {
                 auditLogProvider = auditLogProvider,
                 auditCsvProvider = auditCsvProvider,
                 deviceInfoProvider = deviceInfoProvider,
-                auditClearHandler = auditClearHandler
+                auditClearHandler = auditClearHandler,
+                stationsProvider = stationsProvider
             ).apply { start() }
 
             // 1b. Start HTTPS Server (port 8443) with self-signed SSL for native Mic permissions
@@ -279,7 +310,8 @@ class CastService : Service() {
                         auditLogProvider = auditLogProvider,
                         auditCsvProvider = auditCsvProvider,
                         deviceInfoProvider = deviceInfoProvider,
-                        auditClearHandler = auditClearHandler
+                        auditClearHandler = auditClearHandler,
+                        stationsProvider = stationsProvider
                     ).apply { start() }
                     Log.i(TAG, "QuestCast: HTTPS secure server started on port ${config.httpsPort}")
                 } catch (e: Exception) {
@@ -362,7 +394,8 @@ class CastService : Service() {
 
             signalingServer = SignalingServer(
                 wsPort = config.wsPort,
-                listener = signalingListener
+                listener = signalingListener,
+                relayManager = signalingRelayManager
             ).apply { start() }
 
             if (sslContext != null) {
@@ -370,7 +403,8 @@ class CastService : Service() {
                     secureSignalingServer = SignalingServer(
                         wsPort = config.wssPort,
                         listener = signalingListener,
-                        sslContext = sslContext
+                        sslContext = sslContext,
+                        relayManager = signalingRelayManager
                     ).apply { start() }
                     Log.i(TAG, "QuestCast: WSS secure signaling server started on port ${config.wssPort}")
                 } catch (e: Exception) {
@@ -496,6 +530,20 @@ class CastService : Service() {
         }
         appTrackerManager = null
         _currentApp.value = null
+
+        try {
+            lanDiscoveryManager?.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "QuestCast: error stopping discovery manager", e)
+        }
+        lanDiscoveryManager = null
+
+        try {
+            signalingRelayManager?.stopAll()
+        } catch (e: Exception) {
+            Log.e(TAG, "QuestCast: error stopping relay manager", e)
+        }
+        signalingRelayManager = null
 
         try {
             intercomManager?.release()

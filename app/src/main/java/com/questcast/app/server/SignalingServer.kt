@@ -12,7 +12,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 class SignalingServer(
     val wsPort: Int = 8088,
     private val listener: Listener,
-    sslContext: javax.net.ssl.SSLContext? = null
+    sslContext: javax.net.ssl.SSLContext? = null,
+    val relayManager: SignalingRelayManager? = null
 ) : WebSocketServer(InetSocketAddress("0.0.0.0", wsPort)) {
 
     companion object {
@@ -54,12 +55,22 @@ class SignalingServer(
 
     override fun onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) {
         connectedClients.remove(conn)
+        relayManager?.onBrowserDisconnected(conn)
         Log.i(TAG, "QuestCast: receiver disconnected: ${conn.remoteSocketAddress}, code=$code, reason=$reason")
         listener.onReceiverDisconnected(conn)
     }
 
     override fun onMessage(conn: WebSocket, message: String) {
         try {
+            // Check for multi-station relay tunnel messages
+            if (message.contains("\"type\":\"relay_") || message.contains("\"type\": \"relay_")) {
+                try {
+                    val json = org.json.JSONObject(message)
+                    relayManager?.handleRelayMessage(conn, json)
+                    return
+                } catch (_: Exception) {}
+            }
+
             when (val parsed = SignalingMessage.parse(message)) {
                 is SignalingMessage.Offer -> {
                     Log.i(TAG, "QuestCast: received offer from receiver")

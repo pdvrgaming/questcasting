@@ -19,7 +19,8 @@ class HttpServer(
     private val auditLogProvider: (queryParams: String?) -> String = { "{}" },
     private val auditCsvProvider: (queryParams: String?) -> String = { "" },
     private val deviceInfoProvider: () -> String = { "{}" },
-    private val auditClearHandler: () -> Unit = {}
+    private val auditClearHandler: () -> Unit = {},
+    private val stationsProvider: () -> String = { "[]" }
 ) {
     companion object {
         private const val TAG = "QuestCast"
@@ -135,6 +136,10 @@ class HttpServer(
                     "/api/device-info", "/device-info" -> {
                         val devJson = deviceInfoProvider().toByteArray(Charsets.UTF_8)
                         sendResponse(out, 200, "OK", "application/json; charset=utf-8", devJson, method)
+                    }
+                    "/api/stations", "/stations" -> {
+                        val stationsJson = stationsProvider().toByteArray(Charsets.UTF_8)
+                        sendResponse(out, 200, "OK", "application/json; charset=utf-8", stationsJson, method)
                     }
                     else -> {
                         val assetPath = if (path.startsWith("/")) path.substring(1) else path

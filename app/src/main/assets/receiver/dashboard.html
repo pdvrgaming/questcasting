@@ -122,7 +122,7 @@
       box-shadow: 0 0 16px rgba(239, 68, 68, 0.8) !important;
     }
 
-    /* 2x2 Video Grid */
+    /* Adaptive Video Grid */
     .grid-container {
       flex: 1;
       display: grid;
@@ -133,6 +133,22 @@
       background: #000;
       overflow: hidden;
       position: relative;
+    }
+
+    .grid-container.stations-1 {
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr;
+    }
+
+    .grid-container.stations-2 {
+      grid-template-columns: repeat(2, 1fr);
+      grid-template-rows: 1fr;
+    }
+
+    .grid-container.stations-3,
+    .grid-container.stations-4 {
+      grid-template-columns: repeat(2, 1fr);
+      grid-template-rows: repeat(2, 1fr);
     }
 
     .station-tile {
@@ -699,27 +715,163 @@
       const btnExportCsv = document.getElementById('btnExportCsv');
       const btnClearLog = document.getElementById('btnClearLog');
 
-      // Default station configuration
-      const currentHost = window.location.hostname || '192.168.0.232';
-      let stations = JSON.parse(localStorage.getItem('questcast_stations') || 'null');
-
-      if (!stations || !Array.isArray(stations) || stations.length === 0) {
-        stations = [
-          { id: 1, name: 'Station 1 (VR Pod A)', ip: currentHost },
-          { id: 2, name: 'Station 2 (VR Pod B)', ip: '192.168.0.233' },
-          { id: 3, name: 'Station 3 (VR Pod C)', ip: '192.168.0.234' },
-          { id: 4, name: 'Station 4 (VR Pod D)', ip: '192.168.0.235' }
-        ];
-        localStorage.setItem('questcast_stations', JSON.stringify(stations));
-      }
-
+      // Dynamic LAN Auto-Discovery & Multi-Station State
+      const currentHost = window.location.hostname;
+      let stations = [];
       const activeClients = {};
+      let hostWs = null;
+      let hostWsConnected = false;
+      const relayCallbacks = {};
+      const relayStatusCallbacks = {};
 
       // Shared Audio Context for Push-to-Talk (PTT)
       let pttAudioContext = null;
       let pttMediaStream = null;
       let pttProcessor = null;
       let activePttTarget = null; // 'all' or station ID
+
+      function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+      }
+
+      // Initialize Primary Host WebSocket for Signaling & Multi-Station Relay Tunneling
+      function initHostWebSocket() {
+        if (hostWs && (hostWs.readyState === WebSocket.OPEN || hostWs.readyState === WebSocket.CONNECTING)) {
+          return;
+        }
+
+        try {
+          hostWs = new WebSocket(`${wsProto}//${currentHost}:${wsPort}/`);
+          hostWs.binaryType = 'arraybuffer';
+
+          hostWs.onopen = () => {
+            hostWsConnected = true;
+            console.log('[QuestCast Hub] Host WebSocket connected to', currentHost);
+            // Re-open relay tunnels for any remote stations currently on the grid
+            stations.forEach(st => {
+              if (!st.isSelf && st.ip !== currentHost) {
+                requestRelayTunnel(st);
+              }
+            });
+          };
+
+          hostWs.onmessage = async (e) => {
+            try {
+              if (typeof e.data === 'string') {
+                const msg = JSON.parse(e.data);
+                if (msg.type === 'relay_message') {
+                  const cb = relayCallbacks[msg.channelId];
+                  if (cb) cb(msg.data);
+                } else if (msg.type === 'relay_status') {
+                  const scb = relayStatusCallbacks[msg.channelId];
+                  if (scb) scb(msg.status);
+                } else {
+                  // Direct message for host station (Station 1)
+                  const selfClient = Object.values(activeClients).find(c => c.isSelf);
+                  if (selfClient && selfClient.onSignaling) {
+                    selfClient.onSignaling(msg);
+                  }
+                }
+              }
+            } catch (err) {
+              console.error('[QuestCast Hub] WebSocket message parse error:', err);
+            }
+          };
+
+          hostWs.onclose = () => {
+            hostWsConnected = false;
+            setTimeout(initHostWebSocket, 2000);
+          };
+
+          hostWs.onerror = () => {
+            hostWsConnected = false;
+          };
+        } catch (_) {
+          setTimeout(initHostWebSocket, 2500);
+        }
+      }
+
+      function requestRelayTunnel(st) {
+        if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+          hostWs.send(JSON.stringify({
+            type: 'relay_connect',
+            channelId: String(st.id),
+            targetIp: st.ip,
+            targetPort: st.wsPort || 8088
+          }));
+        }
+      }
+
+      function sendToStation(st, rawString) {
+        if (st.isSelf || st.ip === currentHost) {
+          if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+            hostWs.send(rawString);
+          }
+        } else {
+          if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+            hostWs.send(JSON.stringify({
+              type: 'relay_send',
+              channelId: String(st.id),
+              data: rawString
+            }));
+          }
+        }
+      }
+
+      // LAN Auto-Discovery Engine
+      async function autoDiscoverStations() {
+        try {
+          const res = await fetch('/api/stations', { signal: AbortSignal.timeout(2500) });
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+              syncStationsWithDiscovered(data);
+              return;
+            }
+          }
+        } catch (_) {}
+
+        // Fallback: If network /api/stations not yet ready, ensure host is rendered
+        if (stations.length === 0) {
+          syncStationsWithDiscovered([{
+            id: 'host',
+            name: `Quest 2 (${currentHost})`,
+            ip: currentHost,
+            isSelf: true,
+            httpPort: 8080,
+            httpsPort: 8443,
+            wsPort: 8088,
+            wssPort: 8089,
+            currentGame: 'Standby'
+          }]);
+        }
+      }
+
+      function syncStationsWithDiscovered(discoveredList) {
+        // Check if station membership changed
+        const currentSig = stations.map(s => `${s.id}_${s.ip}`).join('|');
+        const newSig = discoveredList.map(s => `${s.id}_${s.ip}`).join('|');
+
+        // Always update live metadata (current game, battery)
+        discoveredList.forEach(st => {
+          const gameLabel = document.getElementById(`game_${st.id}`);
+          if (gameLabel && st.currentGame) {
+            gameLabel.textContent = st.currentGame;
+          }
+        });
+
+        if (currentSig !== newSig) {
+          console.log('[QuestCast Hub] Station topology changed. Active stations:', discoveredList);
+          stations = discoveredList;
+          renderGrid();
+        }
+      }
 
       async function startIntercom(target) {
         if (activePttTarget) return;
@@ -738,7 +890,6 @@
         }
 
         try {
-          // Request mic permissions
           pttMediaStream = await navigator.mediaDevices.getUserMedia({
             audio: {
               echoCancellation: true,
@@ -766,17 +917,30 @@
               pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
 
+            const pttAudioBase64 = arrayBufferToBase64(pcm16.buffer);
+            const audioMsg = JSON.stringify({ type: 'ptt_audio', audioBase64: pttAudioBase64 });
+
             if (activePttTarget === 'all') {
-              // Send to all connected stations
+              // Send binary directly to host headset
+              if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+                hostWs.send(pcm16.buffer);
+              }
+              // Relay audio to all remote headsets
               Object.values(activeClients).forEach(c => {
-                if (c.ws && c.ws.readyState === WebSocket.OPEN) {
-                  c.ws.send(pcm16.buffer);
+                if (!c.isSelf) {
+                  sendToStation(c.station, audioMsg);
                 }
               });
             } else {
-              const client = activeClients[activePttTarget];
-              if (client && client.ws && client.ws.readyState === WebSocket.OPEN) {
-                client.ws.send(pcm16.buffer);
+              const targetClient = activeClients[activePttTarget];
+              if (targetClient) {
+                if (targetClient.isSelf) {
+                  if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+                    hostWs.send(pcm16.buffer);
+                  }
+                } else {
+                  sendToStation(targetClient.station, audioMsg);
+                }
               }
             }
           };
@@ -788,17 +952,20 @@
 
           // Notify start
           if (target === 'all') {
+            if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+              hostWs.send(JSON.stringify({ type: 'ptt_start' }));
+            }
             Object.values(activeClients).forEach(c => {
-              if (c.ws && c.ws.readyState === WebSocket.OPEN) {
-                c.ws.send(JSON.stringify({ type: 'ptt_start' }));
+              if (!c.isSelf) {
+                sendToStation(c.station, JSON.stringify({ type: 'ptt_start' }));
               }
             });
             btnBroadcastPtt.classList.add('ptt-active');
             broadcastPttText.textContent = 'TALKING TO ALL...';
           } else {
-            const client = activeClients[target];
-            if (client && client.ws && client.ws.readyState === WebSocket.OPEN) {
-              client.ws.send(JSON.stringify({ type: 'ptt_start' }));
+            const targetClient = activeClients[target];
+            if (targetClient) {
+              sendToStation(targetClient.station, JSON.stringify({ type: 'ptt_start' }));
             }
             const tileBtn = document.getElementById(`ptt_btn_${target}`);
             if (tileBtn) {
@@ -808,34 +975,36 @@
           }
         } catch (err) {
           console.error('[QuestCast PTT] Microphone permission error:', err);
-          alert('Microphone access is required for Push-to-Talk intercom. Please allow microphone permissions.');
+          alert('Microphone access is required for Push-to-Talk intercom.');
           stopIntercom();
         }
       }
 
       function stopIntercom() {
         if (!activePttTarget) return;
-
         const target = activePttTarget;
         activePttTarget = null;
 
         if (target === 'all') {
+          if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+            hostWs.send(JSON.stringify({ type: 'ptt_stop' }));
+          }
           Object.values(activeClients).forEach(c => {
-            if (c.ws && c.ws.readyState === WebSocket.OPEN) {
-              try { c.ws.send(JSON.stringify({ type: 'ptt_stop' })); } catch (_) {}
+            if (!c.isSelf) {
+              sendToStation(c.station, JSON.stringify({ type: 'ptt_stop' }));
             }
           });
           btnBroadcastPtt.classList.remove('ptt-active');
           broadcastPttText.textContent = 'Broadcast PTT (All)';
         } else {
-          const client = activeClients[target];
-          if (client && client.ws && client.ws.readyState === WebSocket.OPEN) {
-            try { client.ws.send(JSON.stringify({ type: 'ptt_stop' })); } catch (_) {}
+          const targetClient = activeClients[target];
+          if (targetClient) {
+            sendToStation(targetClient.station, JSON.stringify({ type: 'ptt_stop' }));
           }
           const tileBtn = document.getElementById(`ptt_btn_${target}`);
           if (tileBtn) {
             tileBtn.classList.remove('ptt-active');
-            tileBtn.textContent = 'Talk to Player';
+            tileBtn.textContent = 'Talk';
           }
         }
 
@@ -872,19 +1041,26 @@
 
       function renderGrid() {
         gridContainer.innerHTML = '';
-        stations.forEach(st => {
+        const count = Math.min(4, Math.max(1, stations.length));
+        gridContainer.className = `grid-container stations-${count}`;
+
+        stations.forEach((st, idx) => {
           const tile = document.createElement('div');
           tile.className = 'station-tile';
           tile.id = `tile_${st.id}`;
+
+          const isHost = st.isSelf || st.ip === currentHost;
+          const hostBadge = isHost ? '<span style="font-size:0.65rem; background:rgba(0,229,255,0.15); color:var(--accent-cyan); padding:1px 6px; border-radius:999px; font-weight:700;">HOST</span>' : '<span style="font-size:0.65rem; background:rgba(16,185,129,0.15); color:var(--accent-green); padding:1px 6px; border-radius:999px; font-weight:700;">AUTO</span>';
 
           tile.innerHTML = `
             <div class="station-header">
               <div class="station-title">
                 <div class="status-dot" id="dot_${st.id}"></div>
-                <span>${st.name}</span>
+                <span>${st.name || ('Station ' + (idx + 1))}</span>
+                ${hostBadge}
               </div>
               <div class="station-meta">
-                <span id="game_${st.id}">Standby</span>
+                <span id="game_${st.id}">${st.currentGame || 'Standby'}</span>
                 <button class="tile-ptt-btn" id="ptt_btn_${st.id}" title="Hold to speak to ${st.name} player (${st.ip})">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
@@ -892,16 +1068,16 @@
                   </svg>
                   <span>Talk</span>
                 </button>
-                <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="window.maximizeStation(${st.id})">Expand</button>
+                <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="window.maximizeStation('${st.id}')">Expand</button>
               </div>
             </div>
-            <div class="video-viewport" onclick="window.maximizeStation(${st.id})">
+            <div class="video-viewport" onclick="window.maximizeStation('${st.id}')">
               <video id="video_${st.id}" autoplay playsinline muted></video>
               <div class="tile-overlay" id="overlay_${st.id}">
                 <div>Waiting for ${st.name}</div>
-                <div style="font-size:0.75rem; margin-top:4px;">${wsProto}//${st.ip}:${wsPort}</div>
+                <div style="font-size:0.75rem; margin-top:4px; color:var(--accent-cyan);">${st.ip}</div>
               </div>
-              <button class="floating-close-btn hidden" id="close_${st.id}" onclick="event.stopPropagation(); window.restoreGrid(${st.id})">
+              <button class="floating-close-btn hidden" id="close_${st.id}" onclick="event.stopPropagation(); window.restoreGrid('${st.id}')">
                 &times; Exit Fullscreen
               </button>
             </div>
@@ -924,10 +1100,9 @@
       }
 
       function connectStation(st) {
-        if (activeClients[st.id]) {
-          try { activeClients[st.id].ws?.close(); } catch (_) {}
-          try { activeClients[st.id].pc?.close(); } catch (_) {}
-          clearInterval(activeClients[st.id].pollTimer);
+        const stationKey = String(st.id);
+        if (activeClients[stationKey]) {
+          try { activeClients[stationKey].pc?.close(); } catch (_) {}
         }
 
         const video = document.getElementById(`video_${st.id}`);
@@ -935,17 +1110,18 @@
         const overlay = document.getElementById(`overlay_${st.id}`);
         const gameLabel = document.getElementById(`game_${st.id}`);
 
-        let ws = null;
         let pc = null;
         let pendingCandidates = [];
+        let isConnected = false;
 
         function initPC() {
           if (pc) try { pc.close(); } catch (_) {}
           pc = new RTCPeerConnection({ iceServers: [] });
 
           pc.onicecandidate = (e) => {
-            if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: 'ice', candidate: e.candidate.toJSON() }));
+            if (e.candidate) {
+              const iceMsg = JSON.stringify({ type: 'ice', candidate: e.candidate.toJSON() });
+              sendToStation(st, iceMsg);
             }
           };
 
@@ -960,64 +1136,97 @@
             video.play().catch(() => {});
             if (overlay) overlay.classList.add('hidden');
             if (dot) dot.className = 'status-dot online';
+            isConnected = true;
+          };
+
+          pc.onconnectionstatechange = () => {
+            if (pc.connectionState === 'connected') {
+              if (dot) dot.className = 'status-dot online';
+              if (overlay) overlay.classList.add('hidden');
+            } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+              if (dot) dot.className = 'status-dot';
+              if (overlay) overlay.classList.remove('hidden');
+            }
           };
         }
 
-        try {
-          dot.className = 'status-dot connecting';
-          ws = new WebSocket(`${wsProto}//${st.ip}:${wsPort}/`);
-          ws.binaryType = 'arraybuffer';
-
-          ws.onopen = () => {
-            dot.className = 'status-dot connecting';
-          };
-
-          ws.onmessage = async (e) => {
-            try {
-              if (typeof e.data === 'string') {
-                const msg = JSON.parse(e.data);
-                const type = (msg.type || msg.kind || '').toLowerCase();
-                if (type === 'offer') {
-                  initPC();
-                  await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: msg.sdp }));
-                  while (pendingCandidates.length > 0) {
-                    await pc.addIceCandidate(new RTCIceCandidate(pendingCandidates.shift()));
-                  }
-                  const answer = await pc.createAnswer();
-                  await pc.setLocalDescription(answer);
-                  ws.send(JSON.stringify({ type: 'answer', sdp: pc.localDescription.sdp }));
-                } else if (type === 'ice') {
-                  if (pc && pc.remoteDescription) {
-                    await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-                  } else {
-                    pendingCandidates.push(msg.candidate);
-                  }
-                }
-              }
-            } catch (_) {}
-          };
-
-          ws.onclose = () => {
-            if (dot) dot.className = 'status-dot';
-            if (overlay) overlay.classList.remove('hidden');
-          };
-        } catch (_) {}
-
-        // Poll current game info from HTTP endpoint
-        const pollTimer = setInterval(async () => {
+        async function handleSignaling(rawPayload) {
           try {
-            const res = await fetch(`${httpProto}//${st.ip}:${httpPort}/status`, { signal: AbortSignal.timeout(2000) });
-            if (res.ok) {
-              const data = await res.json();
-              if (data.currentGame && gameLabel) {
-                gameLabel.textContent = data.currentGame;
+            const msg = (typeof rawPayload === 'string') ? JSON.parse(rawPayload) : rawPayload;
+            const type = (msg.type || msg.kind || '').toLowerCase();
+            if (type === 'offer') {
+              initPC();
+              await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: msg.sdp }));
+              while (pendingCandidates.length > 0) {
+                await pc.addIceCandidate(new RTCIceCandidate(pendingCandidates.shift()));
+              }
+              const answer = await pc.createAnswer();
+              await pc.setLocalDescription(answer);
+              sendToStation(st, JSON.stringify({ type: 'answer', sdp: pc.localDescription.sdp }));
+            } else if (type === 'ice') {
+              if (pc && pc.remoteDescription) {
+                await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+              } else {
+                pendingCandidates.push(msg.candidate);
               }
             }
-          } catch (_) {}
-        }, 5000);
+          } catch (err) {
+            console.error('[Signaling Error ' + st.id + ']', err);
+          }
+        }
 
-        activeClients[st.id] = { ws, pc, pollTimer, ip: st.ip };
+        const isHost = st.isSelf || st.ip === currentHost;
+        if (isHost) {
+          // Direct connection to host via hostWs
+          if (dot) dot.className = 'status-dot connecting';
+          activeClients[stationKey] = {
+            station: st,
+            isSelf: true,
+            ip: st.ip,
+            onSignaling: handleSignaling,
+            get isConnected() { return isConnected; }
+          };
+
+          // Trigger offer exchange if hostWs is already open
+          if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+            hostWs.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+          }
+        } else {
+          // Remote Station -> Tunnel through Host WebSocket Relay
+          if (dot) dot.className = 'status-dot connecting';
+
+          relayCallbacks[stationKey] = (data) => {
+            handleSignaling(data);
+          };
+
+          relayStatusCallbacks[stationKey] = (status) => {
+            if (status === 'connected') {
+              if (dot) dot.className = 'status-dot connecting';
+            } else if (status === 'disconnected') {
+              if (dot) dot.className = 'status-dot';
+              if (overlay) overlay.classList.remove('hidden');
+            }
+          };
+
+          function sendRelayConnect() {
+            if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+              requestRelayTunnel(st);
+            } else {
+              setTimeout(sendRelayConnect, 800);
+            }
+          }
+          sendRelayConnect();
+
+          activeClients[stationKey] = {
+            station: st,
+            isSelf: false,
+            ip: st.ip,
+            onSignaling: handleSignaling,
+            get isConnected() { return isConnected; }
+          };
+        }
       }
+
 
       window.maximizeStation = function (id) {
         document.querySelectorAll('.station-tile').forEach(t => t.classList.remove('maximized'));
@@ -1062,7 +1271,7 @@
         row.className = 'station-row';
         row.innerHTML = `
           <input type="text" class="name-input" value="Station ${idx + 1}" placeholder="Station Name" id="name_${idx}">
-          <input type="text" class="ip-input" value="192.168.0." placeholder="Headset IP Address" id="ip_${idx}">
+          <input type="text" class="ip-input" value="" placeholder="Headset IP Address (e.g. 192.168.x.x)" id="ip_${idx}">
           <button class="del-btn" onclick="this.parentElement.remove()">&times;</button>
         `;
         stationList.appendChild(row);
@@ -1304,8 +1513,10 @@
 
       btnCloseAuditModal.addEventListener('click', () => modalAuditLog.classList.add('hidden'));
 
-      // Initial Render
-      renderGrid();
+      // Initial Startup: Connect to host WebSocket and start dynamic LAN Auto-Discovery
+      initHostWebSocket();
+      autoDiscoverStations();
+      setInterval(autoDiscoverStations, 3000);
     })();
   </script>
 </body>
