@@ -451,6 +451,72 @@
     }
 
     .hidden { display: none !important; }
+
+    /* Responsive adjustments for Tablets & Smartphones */
+    @media (max-width: 768px) {
+      header {
+        padding: 8px 12px;
+      }
+      .brand span:first-of-type {
+        font-size: 1rem;
+      }
+      .btn {
+        padding: 6px 10px;
+        font-size: 0.8rem;
+      }
+    }
+
+    @media (max-width: 640px) {
+      header {
+        padding: 6px 10px;
+      }
+      .brand {
+        gap: 6px;
+        font-size: 0.9rem;
+      }
+      .brand svg {
+        width: 18px;
+        height: 18px;
+      }
+      .brand span.tag {
+        font-size: 0.6rem;
+        padding: 1px 5px;
+      }
+      .nav-buttons {
+        gap: 4px;
+      }
+      .btn {
+        padding: 6px 8px;
+        font-size: 0.75rem;
+      }
+      .btn span.btn-label {
+        display: none;
+      }
+      #broadcastPttText {
+        display: none;
+      }
+
+      /* On portrait mobile, stack stations or use 1-column scrollable grid */
+      @media (orientation: portrait) {
+        .grid-container {
+          grid-template-columns: 1fr;
+          grid-template-rows: repeat(4, minmax(220px, 1fr));
+          overflow-y: auto;
+        }
+      }
+    }
+
+    @media (max-width: 420px) {
+      .brand span.tag {
+        display: none;
+      }
+      .brand span:first-of-type {
+        font-size: 0.85rem;
+      }
+      .btn {
+        padding: 5px 6px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -483,17 +549,22 @@
           <circle cx="12" cy="12" r="3"></circle>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
         </svg>
-        Stations
+        <span class="btn-label">Stations</span>
       </button>
 
       <button id="btnAuditLog" class="btn" title="App & Date Activity Logs">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
         </svg>
-        Activity & Audit
+        <span class="btn-label">Activity & Audit</span>
       </button>
 
-      <a href="index.html" class="btn btn-primary" style="text-decoration:none;">Single View</a>
+      <a href="index.html" class="btn btn-primary" title="Single View" style="text-decoration:none;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+        </svg>
+        <span class="btn-label">Solo View</span>
+      </a>
     </div>
   </header>
 

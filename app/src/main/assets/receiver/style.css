@@ -596,22 +596,205 @@ html, body {
   display: none !important;
 }
 
-@media (max-width: 600px) {
+/* Tablet & Smaller Screens */
+@media (max-width: 768px) {
+  .top-nav {
+    padding: 10px 14px;
+  }
   .hud-stats {
     display: none;
   }
-  .brand-title {
-    font-size: 1rem;
+  .brand {
+    gap: 8px;
   }
+  .brand-title {
+    font-size: 1.05rem;
+  }
+}
+
+/* Mobile Screens (<= 640px) */
+@media (max-width: 640px) {
+  .top-nav {
+    padding: 8px 10px;
+    gap: 6px;
+    box-sizing: border-box;
+    width: 100%;
+  }
+
+  .brand {
+    gap: 6px;
+    min-width: 0;
+    flex-shrink: 1;
+  }
+
+  .brand-icon {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+  }
+
+  .brand-title {
+    font-size: 0.95rem;
+    white-space: nowrap;
+  }
+
+  .badge {
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+
+  .nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+  }
+
+  .control-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 7px;
+    flex-shrink: 0;
+  }
+
+  .control-btn .icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Transform PTT into compact icon button on mobile */
+  .ptt-btn {
+    width: 34px !important;
+    height: 34px !important;
+    padding: 0 !important;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .ptt-btn #pttText {
+    display: none !important;
+  }
+
+  .bottom-hint {
+    font-size: 0.68rem;
+    padding: 6px 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .floating-exit-btn span {
     display: none;
   }
+
   .floating-exit-btn {
     padding: 8px;
     border-radius: 50%;
   }
+
   .metrics-row {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  .modal-backdrop {
+    padding: 12px;
+  }
+
+  .modal-card {
+    max-height: 92vh;
+  }
+
+  .modal-header {
+    padding: 14px 16px;
+  }
+
+  .modal-body {
+    padding: 16px 14px;
+  }
+
+  .filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .filter-group {
+    justify-content: space-between;
+  }
 }
+
+/* Small Smartphone Viewports (<= 420px) */
+@media (max-width: 420px) {
+  .top-nav {
+    padding: 6px 8px;
+    gap: 4px;
+  }
+
+  .brand {
+    gap: 4px;
+  }
+
+  .brand-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .brand-title {
+    font-size: 0.85rem;
+  }
+
+  .badge {
+    font-size: 0.6rem;
+    padding: 1px 5px;
+  }
+
+  .nav-actions {
+    gap: 4px;
+  }
+
+  .control-btn {
+    width: 31px;
+    height: 31px;
+    border-radius: 6px;
+  }
+
+  .control-btn .icon {
+    width: 15px;
+    height: 15px;
+  }
+
+  .ptt-btn {
+    width: 31px !important;
+    height: 31px !important;
+  }
+}
+
+/* Extra Narrow Smartphone Viewports (<= 360px) */
+@media (max-width: 360px) {
+  .brand-title {
+    display: none;
+  }
+
+  .nav-actions {
+    gap: 3px;
+  }
+
+  .control-btn {
+    width: 29px;
+    height: 29px;
+  }
+
+  .control-btn .icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .ptt-btn {
+    width: 29px !important;
+    height: 29px !important;
+  }
+}
+
 
