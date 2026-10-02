@@ -77,6 +77,17 @@ class SignalingRelayManager {
 
                     override fun onError(ex: Exception?) {
                         Log.w(TAG, "QuestCast: [Relay] Remote station $targetIp error: ${ex?.message}")
+                        if (browserSocket.isOpen) {
+                            try {
+                                val notify = JSONObject().apply {
+                                    put("type", "relay_status")
+                                    put("channelId", channelId)
+                                    put("status", "error")
+                                    put("error", ex?.message ?: "Connection failed")
+                                }
+                                browserSocket.send(notify.toString())
+                            } catch (_: Exception) {}
+                        }
                     }
                 }
 

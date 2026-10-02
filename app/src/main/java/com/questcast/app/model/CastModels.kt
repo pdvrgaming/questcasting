@@ -176,7 +176,11 @@ sealed class SignalingMessage {
                         bitrateKbps = json.optInt("bitrateKbps", 0)
                     )
                     "ptt_audio" -> {
-                        val data = json.optString("data", "")
+                        val data = if (json.has("data") && json.optString("data").isNotBlank()) {
+                            json.optString("data")
+                        } else {
+                            json.optString("audioBase64", "")
+                        }
                         PttAudio(data)
                     }
                     "ptt_start" -> PttStart

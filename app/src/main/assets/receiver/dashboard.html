@@ -731,6 +731,10 @@
       let pttProcessor = null;
       let activePttTarget = null; // 'all' or station ID
 
+      function getStationKey(st) {
+        return (st && st.ip) ? st.ip.replace(/[^a-zA-Z0-9]/g, '_') : (st && st.id ? String(st.id) : 'host');
+      }
+
       function arrayBufferToBase64(buffer) {
         let binary = '';
         const bytes = new Uint8Array(buffer);
@@ -754,8 +758,11 @@
           hostWs.onopen = () => {
             hostWsConnected = true;
             console.log('[QuestCast Hub] Host WebSocket connected to', currentHost);
-            // Request fresh offer from host
-            hostWs.send(JSON.stringify({ type: 'request_offer' }));
+            const hostKey = currentHost.replace(/[^a-zA-Z0-9]/g, '_');
+            const selfClient = activeClients[hostKey];
+            if (!selfClient || !selfClient.isConnected) {
+              hostWs.send(JSON.stringify({ type: 'request_offer' }));
+            }
             // Re-open relay tunnels for any remote stations currently on the grid
             stations.forEach(st => {
               if (!st.isSelf && st.ip !== currentHost) {
@@ -775,8 +782,9 @@
                   const scb = relayStatusCallbacks[msg.channelId];
                   if (scb) scb(msg.status);
                 } else {
-                  // Direct message for host station (Station 1)
-                  const selfClient = Object.values(activeClients).find(c => c.isSelf);
+                  // Direct message for host station
+                  const hostKey = currentHost.replace(/[^a-zA-Z0-9]/g, '_');
+                  const selfClient = activeClients[hostKey] || Object.values(activeClients).find(c => c.isSelf);
                   if (selfClient && selfClient.onSignaling) {
                     selfClient.onSignaling(msg);
                   } else {
@@ -806,7 +814,7 @@
         if (hostWs && hostWs.readyState === WebSocket.OPEN) {
           hostWs.send(JSON.stringify({
             type: 'relay_connect',
-            channelId: String(st.id),
+            channelId: String(st.ip),
             targetIp: st.ip,
             targetPort: st.wsPort || 8088
           }));
@@ -814,6 +822,12 @@
       }
 
       function sendToStation(st, rawString) {
+        const stKey = getStationKey(st);
+        const client = activeClients[stKey];
+        if (client && client.directWs && client.directWs.readyState === WebSocket.OPEN) {
+          client.directWs.send(rawString);
+          return;
+        }
         if (st.isSelf || st.ip === currentHost) {
           if (hostWs && hostWs.readyState === WebSocket.OPEN) {
             hostWs.send(rawString);
@@ -822,7 +836,7 @@
           if (hostWs && hostWs.readyState === WebSocket.OPEN) {
             hostWs.send(JSON.stringify({
               type: 'relay_send',
-              channelId: String(st.id),
+              channelId: String(st.ip),
               data: rawString
             }));
           }
@@ -859,20 +873,25 @@
       }
 
       function syncStationsWithDiscovered(discoveredList) {
-        // Check if station membership changed
-        const currentSig = stations.map(s => `${s.id}_${s.ip}`).join('|');
-        const newSig = discoveredList.map(s => `${s.id}_${s.ip}`).join('|');
+        // Build stable map of IPs
+        const newIps = discoveredList.map(s => s.ip).sort().join('|');
+        const currentIps = stations.map(s => s.ip).sort().join('|');
 
-        // Always update live metadata (current game, battery)
+        // Always update live metadata (current game, battery, name) without destroying video elements
         discoveredList.forEach(st => {
-          const gameLabel = document.getElementById(`game_${st.id}`);
+          const stKey = getStationKey(st);
+          const gameLabel = document.getElementById(`game_${stKey}`);
           if (gameLabel && st.currentGame) {
             gameLabel.textContent = st.currentGame;
           }
+          const nameSpan = document.getElementById(`name_${stKey}`);
+          if (nameSpan && st.name) {
+            nameSpan.textContent = st.name;
+          }
         });
 
-        if (currentSig !== newSig) {
-          console.log('[QuestCast Hub] Station topology changed. Active stations:', discoveredList);
+        if (newIps !== currentIps || stations.length === 0) {
+          console.log('[QuestCast Hub] Active stations changed:', discoveredList);
           stations = discoveredList;
           renderGrid();
         }
@@ -884,9 +903,11 @@
         if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
           const httpsUrl = `https://${window.location.hostname}:8443${window.location.pathname}`;
           const proceed = confirm(
-            'Push-to-Talk Intercom requires a Secure Connection (HTTPS).\n\n' +
-            'Click OK to switch to the secure HTTPS dashboard:\n' + httpsUrl + '\n\n' +
-            '(Your browser will prompt you once to tap "Advanced" -> "Proceed" to trust the local headset certificate).'
+            'Push-to-Talk Intercom requires microphone permission.\n\n' +
+            'Option 1: Switch to secure HTTPS: ' + httpsUrl + '\n' +
+            '(Click Advanced -> Proceed to accept the headset certificate)\n\n' +
+            'Option 2 (HTTP): Enable chrome://flags/#unsafely-treat-insecure-origin-as-secure with this URL.\n\n' +
+            'Switch to HTTPS now?'
           );
           if (proceed) {
             window.location.href = httpsUrl;
@@ -923,25 +944,33 @@
             }
 
             const pttAudioBase64 = arrayBufferToBase64(pcm16.buffer);
-            const audioMsg = JSON.stringify({ type: 'ptt_audio', audioBase64: pttAudioBase64 });
+            const audioMsg = JSON.stringify({
+              type: 'ptt_audio',
+              data: pttAudioBase64,
+              audioBase64: pttAudioBase64
+            });
 
             if (activePttTarget === 'all') {
-              // Send binary directly to host headset
-              if (hostWs && hostWs.readyState === WebSocket.OPEN) {
-                hostWs.send(pcm16.buffer);
-              }
-              // Relay audio to all remote headsets
+              // Send directly or via relay to all stations
               Object.values(activeClients).forEach(c => {
-                if (!c.isSelf) {
+                if (c.directWs && c.directWs.readyState === WebSocket.OPEN) {
+                  try { c.directWs.send(pcm16.buffer); } catch (_) {}
+                } else if (c.isSelf) {
+                  if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+                    try { hostWs.send(pcm16.buffer); } catch (_) {}
+                  }
+                } else {
                   sendToStation(c.station, audioMsg);
                 }
               });
             } else {
               const targetClient = activeClients[activePttTarget];
               if (targetClient) {
-                if (targetClient.isSelf) {
+                if (targetClient.directWs && targetClient.directWs.readyState === WebSocket.OPEN) {
+                  try { targetClient.directWs.send(pcm16.buffer); } catch (_) {}
+                } else if (targetClient.isSelf) {
                   if (hostWs && hostWs.readyState === WebSocket.OPEN) {
-                    hostWs.send(pcm16.buffer);
+                    try { hostWs.send(pcm16.buffer); } catch (_) {}
                   }
                 } else {
                   sendToStation(targetClient.station, audioMsg);
@@ -957,13 +986,8 @@
 
           // Notify start
           if (target === 'all') {
-            if (hostWs && hostWs.readyState === WebSocket.OPEN) {
-              hostWs.send(JSON.stringify({ type: 'ptt_start' }));
-            }
             Object.values(activeClients).forEach(c => {
-              if (!c.isSelf) {
-                sendToStation(c.station, JSON.stringify({ type: 'ptt_start' }));
-              }
+              sendToStation(c.station, JSON.stringify({ type: 'ptt_start' }));
             });
             btnBroadcastPtt.classList.add('ptt-active');
             broadcastPttText.textContent = 'TALKING TO ALL...';
@@ -991,13 +1015,8 @@
         activePttTarget = null;
 
         if (target === 'all') {
-          if (hostWs && hostWs.readyState === WebSocket.OPEN) {
-            hostWs.send(JSON.stringify({ type: 'ptt_stop' }));
-          }
           Object.values(activeClients).forEach(c => {
-            if (!c.isSelf) {
-              sendToStation(c.station, JSON.stringify({ type: 'ptt_stop' }));
-            }
+            sendToStation(c.station, JSON.stringify({ type: 'ptt_stop' }));
           });
           btnBroadcastPtt.classList.remove('ptt-active');
           broadcastPttText.textContent = 'Broadcast PTT (All)';
@@ -1050,9 +1069,10 @@
         gridContainer.className = `grid-container stations-${count}`;
 
         stations.forEach((st, idx) => {
+          const stKey = getStationKey(st);
           const tile = document.createElement('div');
           tile.className = 'station-tile';
-          tile.id = `tile_${st.id}`;
+          tile.id = `tile_${stKey}`;
 
           const isHost = st.isSelf || st.ip === currentHost;
           const hostBadge = isHost ? '<span style="font-size:0.65rem; background:rgba(0,229,255,0.15); color:var(--accent-cyan); padding:1px 6px; border-radius:999px; font-weight:700;">HOST</span>' : '<span style="font-size:0.65rem; background:rgba(16,185,129,0.15); color:var(--accent-green); padding:1px 6px; border-radius:999px; font-weight:700;">AUTO</span>';
@@ -1060,29 +1080,29 @@
           tile.innerHTML = `
             <div class="station-header">
               <div class="station-title">
-                <div class="status-dot" id="dot_${st.id}"></div>
-                <span>${st.name || ('Station ' + (idx + 1))}</span>
+                <div class="status-dot" id="dot_${stKey}"></div>
+                <span id="name_${stKey}">${st.name || ('Station ' + (idx + 1))}</span>
                 ${hostBadge}
               </div>
               <div class="station-meta">
-                <span id="game_${st.id}">${st.currentGame || 'Standby'}</span>
-                <button class="tile-ptt-btn" id="ptt_btn_${st.id}" title="Hold to speak to ${st.name} player (${st.ip})">
+                <span id="game_${stKey}">${st.currentGame || 'Standby'}</span>
+                <button class="tile-ptt-btn" id="ptt_btn_${stKey}" title="Hold to speak to ${st.name} player (${st.ip})">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
                     <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
                   </svg>
                   <span>Talk</span>
                 </button>
-                <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="window.maximizeStation('${st.id}')">Expand</button>
+                <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="window.maximizeStation('${stKey}')">Expand</button>
               </div>
             </div>
-            <div class="video-viewport" onclick="window.maximizeStation('${st.id}')">
-              <video id="video_${st.id}" autoplay playsinline muted></video>
-              <div class="tile-overlay" id="overlay_${st.id}">
+            <div class="video-viewport" onclick="window.maximizeStation('${stKey}')">
+              <video id="video_${stKey}" autoplay playsinline muted></video>
+              <div class="tile-overlay" id="overlay_${stKey}">
                 <div>Waiting for ${st.name}</div>
                 <div style="font-size:0.75rem; margin-top:4px; color:var(--accent-cyan);">${st.ip}</div>
               </div>
-              <button class="floating-close-btn hidden" id="close_${st.id}" onclick="event.stopPropagation(); window.restoreGrid('${st.id}')">
+              <button class="floating-close-btn hidden" id="close_${stKey}" onclick="event.stopPropagation(); window.restoreGrid('${stKey}')">
                 &times; Exit Fullscreen
               </button>
             </div>
@@ -1090,14 +1110,14 @@
           gridContainer.appendChild(tile);
 
           // Bind PTT for this specific station
-          const tilePttBtn = tile.querySelector(`#ptt_btn_${st.id}`);
+          const tilePttBtn = tile.querySelector(`#ptt_btn_${stKey}`);
           tilePttBtn.addEventListener('mousedown', (e) => {
             e.stopPropagation();
-            startIntercom(st.id);
+            startIntercom(stKey);
           });
           tilePttBtn.addEventListener('touchstart', (e) => {
             e.stopPropagation();
-            startIntercom(st.id);
+            startIntercom(stKey);
           }, { passive: false });
 
           connectStation(st);
@@ -1105,19 +1125,22 @@
       }
 
       function connectStation(st) {
-        const stationKey = String(st.id);
-        if (activeClients[stationKey]) {
-          try { activeClients[stationKey].pc?.close(); } catch (_) {}
+        const stKey = getStationKey(st);
+        if (activeClients[stKey]) {
+          try { activeClients[stKey].pc?.close(); } catch (_) {}
+          try { activeClients[stKey].directWs?.close(); } catch (_) {}
         }
 
-        const video = document.getElementById(`video_${st.id}`);
-        const dot = document.getElementById(`dot_${st.id}`);
-        const overlay = document.getElementById(`overlay_${st.id}`);
-        const gameLabel = document.getElementById(`game_${st.id}`);
+        const video = document.getElementById(`video_${stKey}`);
+        const dot = document.getElementById(`dot_${stKey}`);
+        const overlay = document.getElementById(`overlay_${stKey}`);
+        const gameLabel = document.getElementById(`game_${stKey}`);
 
         let pc = null;
         let pendingCandidates = [];
         let isConnected = false;
+        let directWs = null;
+        let hasReceivedOffer = false;
 
         function initPC() {
           if (pc) try { pc.close(); } catch (_) {}
@@ -1175,61 +1198,47 @@
             const msg = (typeof rawPayload === 'string') ? JSON.parse(rawPayload) : rawPayload;
             const type = (msg.type || msg.kind || '').toLowerCase();
             if (type === 'offer') {
+              hasReceivedOffer = true;
               initPC();
               await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: msg.sdp }));
               while (pendingCandidates.length > 0) {
-                await pc.addIceCandidate(new RTCIceCandidate(pendingCandidates.shift()));
+                const cand = pendingCandidates.shift();
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(cand));
+                } catch (e) {
+                  console.warn('[QuestCast Hub] Candidate skipped:', e);
+                }
               }
               const answer = await pc.createAnswer();
               await pc.setLocalDescription(answer);
               sendToStation(st, JSON.stringify({ type: 'answer', sdp: pc.localDescription.sdp }));
             } else if (type === 'ice') {
               if (pc && pc.remoteDescription) {
-                await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                } catch (e) {
+                  console.warn('[QuestCast Hub] ICE add failed for ' + st.ip, e);
+                }
               } else {
                 pendingCandidates.push(msg.candidate);
               }
             }
           } catch (err) {
-            console.error('[Signaling Error ' + st.id + ']', err);
+            console.error('[Signaling Error ' + st.ip + ']', err);
           }
         }
 
-        const isHost = st.isSelf || st.ip === currentHost;
-        if (isHost) {
-          // Direct connection to host via hostWs
-          if (dot) dot.className = 'status-dot connecting';
-          activeClients[stationKey] = {
-            station: st,
-            isSelf: true,
-            ip: st.ip,
-            onSignaling: handleSignaling,
-            get isConnected() { return isConnected; }
-          };
-
-          // Drain any buffered host signaling messages!
-          while (pendingHostSignaling.length > 0) {
-            handleSignaling(pendingHostSignaling.shift());
-          }
-
-          // Trigger offer exchange if hostWs is already open
-          if (hostWs && hostWs.readyState === WebSocket.OPEN) {
-            hostWs.send(JSON.stringify({ type: 'request_offer' }));
-          }
-        } else {
-          // Remote Station -> Tunnel through Host WebSocket Relay
+        function setupRelayTunnel() {
           if (dot) dot.className = 'status-dot connecting';
 
-          relayCallbacks[stationKey] = (data) => {
+          relayCallbacks[st.ip] = (data) => {
             handleSignaling(data);
           };
 
-          relayStatusCallbacks[stationKey] = (status) => {
+          relayStatusCallbacks[st.ip] = (status) => {
             if (status === 'connected') {
               if (dot) dot.className = 'status-dot connecting';
-              // Request offer from remote station
-              sendToStation(st, JSON.stringify({ type: 'request_offer' }));
-            } else if (status === 'disconnected') {
+            } else if (status === 'disconnected' || status === 'error') {
               if (dot) dot.className = 'status-dot';
               if (overlay) overlay.classList.remove('hidden');
             }
@@ -1243,15 +1252,72 @@
             }
           }
           sendRelayConnect();
-
-          activeClients[stationKey] = {
-            station: st,
-            isSelf: false,
-            ip: st.ip,
-            onSignaling: handleSignaling,
-            get isConnected() { return isConnected; }
-          };
         }
+
+        const isHost = st.isSelf || st.ip === currentHost;
+
+        if (!isHttps) {
+          // DIRECT WEBSOCKET MODE: On plain HTTP, connect directly to each headset!
+          try {
+            const targetPort = st.wsPort || 8088;
+            directWs = new WebSocket(`ws://${st.ip}:${targetPort}/`);
+            directWs.binaryType = 'arraybuffer';
+
+            directWs.onopen = () => {
+              if (dot) dot.className = 'status-dot connecting';
+              console.log('[QuestCast Hub] Direct WebSocket open to', st.ip);
+            };
+
+            directWs.onmessage = (e) => {
+              if (typeof e.data === 'string') {
+                handleSignaling(e.data);
+              }
+            };
+
+            directWs.onclose = () => {
+              if (dot) dot.className = 'status-dot';
+              if (overlay) overlay.classList.remove('hidden');
+            };
+
+            directWs.onerror = () => {
+              console.warn('[QuestCast Hub] Direct WS to ' + st.ip + ' failed, using host relay fallback...');
+              if (!isHost) setupRelayTunnel();
+            };
+          } catch (e) {
+            console.warn('[QuestCast Hub] Direct WS exception, using host relay', e);
+            if (!isHost) setupRelayTunnel();
+          }
+        } else {
+          // HTTPS MODE: Local headset via hostWs, remote headsets via hostWs relay tunnel
+          if (isHost) {
+            if (dot) dot.className = 'status-dot connecting';
+            while (pendingHostSignaling.length > 0) {
+              handleSignaling(pendingHostSignaling.shift());
+            }
+            if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+              hostWs.send(JSON.stringify({ type: 'request_offer' }));
+            }
+          } else {
+            setupRelayTunnel();
+          }
+        }
+
+        // Offer watchdog: If no offer received within 3.5s, request one
+        setTimeout(() => {
+          if (!hasReceivedOffer) {
+            console.log('[QuestCast Hub] Requesting offer watchdog for', st.ip);
+            sendToStation(st, JSON.stringify({ type: 'request_offer' }));
+          }
+        }, 3500);
+
+        activeClients[stKey] = {
+          station: st,
+          isSelf: isHost,
+          ip: st.ip,
+          directWs: directWs,
+          onSignaling: handleSignaling,
+          get isConnected() { return isConnected; }
+        };
       }
 
 
