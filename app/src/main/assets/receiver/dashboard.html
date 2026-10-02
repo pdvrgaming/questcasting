@@ -951,16 +951,14 @@
             });
 
             if (activePttTarget === 'all') {
-              // Send directly or via relay to all stations
+              // Send binary directly to hostWs (host plays locally AND broadcasts to all station relays)
+              if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+                try { hostWs.send(pcm16.buffer); } catch (_) {}
+              }
+              // Also send to direct WebSockets if active in HTTP mode
               Object.values(activeClients).forEach(c => {
-                if (c.directWs && c.directWs.readyState === WebSocket.OPEN) {
+                if (!c.isSelf && c.directWs && c.directWs.readyState === WebSocket.OPEN) {
                   try { c.directWs.send(pcm16.buffer); } catch (_) {}
-                } else if (c.isSelf) {
-                  if (hostWs && hostWs.readyState === WebSocket.OPEN) {
-                    try { hostWs.send(pcm16.buffer); } catch (_) {}
-                  }
-                } else {
-                  sendToStation(c.station, audioMsg);
                 }
               });
             } else {

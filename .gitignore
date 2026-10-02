@@ -15,4 +15,6 @@ app/build/
 *.aab
 __pycache__/
 *.pyc
+scratch/
+screen2.png
 

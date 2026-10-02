@@ -126,6 +126,7 @@ class SignalingServer(
             val bytes = ByteArray(message.remaining())
             message.get(bytes)
             listener.onPttAudioReceived(conn, bytes)
+            relayManager?.handleBroadcastPttAudio(bytes)
         } catch (e: Exception) {
             Log.e(TAG, "QuestCast: error handling binary audio frame", e)
         }

@@ -135,6 +135,14 @@ def get_connected_devices():
                 devices.append({"serial": serial, "model": model, "raw": line})
             elif status == "unauthorized":
                 print(f"{YELLOW}[!] Device {serial} is unauthorized. Put on the headset and click 'Allow USB Debugging'.{RESET}")
+
+    # If no devices attached, attempt connecting to known Quest IPs on wireless port 5555
+    if not devices:
+        for ip in ["192.168.0.168", "192.168.0.232"]:
+            c_code, c_out, _ = run_adb(f"connect {ip}:5555", timeout=3)
+            if "connected to" in c_out.lower():
+                devices.append({"serial": f"{ip}:5555", "model": "Quest_2", "raw": c_out})
+
     return devices
 
 

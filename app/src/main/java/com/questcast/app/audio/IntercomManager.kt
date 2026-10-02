@@ -41,7 +41,7 @@ class IntercomManager(
 
         try {
             val audioAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build()
 
@@ -59,7 +59,7 @@ class IntercomManager(
                 .build()
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                audioTrack?.setVolume(volumeMultiplier.coerceIn(0.0f, 2.0f))
+                audioTrack?.setVolume(volumeMultiplier.coerceIn(0.0f, 1.0f))
             }
 
             audioTrack?.play()

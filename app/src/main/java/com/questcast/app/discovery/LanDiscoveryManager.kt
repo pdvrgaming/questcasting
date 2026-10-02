@@ -277,7 +277,8 @@ class LanDiscoveryManager(
 
     private fun maybeProbeSubnet() {
         val now = System.currentTimeMillis()
-        if (now - lastSubnetProbeTime < 8000L) return
+        val minInterval = if (discoveredPeers.isEmpty()) 20000L else 60000L
+        if (now - lastSubnetProbeTime < minInterval) return
         lastSubnetProbeTime = now
 
         Thread({

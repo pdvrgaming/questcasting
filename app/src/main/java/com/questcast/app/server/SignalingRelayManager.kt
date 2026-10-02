@@ -35,6 +35,7 @@ class SignalingRelayManager {
                 val client = object : WebSocketClient(uri) {
                     override fun onOpen(handshakedata: ServerHandshake?) {
                         Log.i(TAG, "QuestCast: [Relay] Connected to remote station $targetIp:$targetPort (channel=$channelId)")
+                        activeRelays[key]?.flushQueue()
                         if (browserSocket.isOpen) {
                             val notify = JSONObject().apply {
                                 put("type", "relay_status")
@@ -93,15 +94,16 @@ class SignalingRelayManager {
 
                 client.connectionLostTimeout = 10
                 client.isTcpNoDelay = true
-                activeRelays[key] = RemoteStationClient(client, targetIp, targetPort)
+                val rsc = RemoteStationClient(client, targetIp, targetPort)
+                activeRelays[key] = rsc
                 client.connect()
             }
 
             "relay_send" -> {
                 val data = json.optString("data")
                 val relay = activeRelays[key]
-                if (relay != null && relay.client.isOpen) {
-                    relay.client.send(data)
+                if (relay != null) {
+                    relay.sendOrQueue(data)
                 }
             }
 
@@ -151,7 +153,25 @@ class SignalingRelayManager {
         val ip: String,
         val port: Int
     ) {
+        private val pendingQueue = java.util.concurrent.ConcurrentLinkedQueue<String>()
+
+        fun sendOrQueue(data: String) {
+            if (client.isOpen) {
+                client.send(data)
+            } else if (pendingQueue.size < 25) {
+                pendingQueue.offer(data)
+            }
+        }
+
+        fun flushQueue() {
+            while (client.isOpen && !pendingQueue.isEmpty()) {
+                val item = pendingQueue.poll() ?: break
+                try { client.send(item) } catch (_: Exception) {}
+            }
+        }
+
         fun close() {
+            pendingQueue.clear()
             try { client.close() } catch (_: Exception) {}
         }
     }
