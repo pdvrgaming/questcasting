@@ -14,6 +14,7 @@ import com.questcast.app.MainActivity
 import com.questcast.app.model.CastConfig
 import com.questcast.app.model.CastState
 import com.questcast.app.model.DiagnosticsInfo
+import com.questcast.app.model.SignalingMessage
 import com.questcast.app.server.HttpServer
 import com.questcast.app.server.SignalingServer
 import com.questcast.app.util.NetworkUtils
@@ -67,7 +68,8 @@ class CastService : Service() {
     private var wifiLock: WifiManager.WifiLock? = null
 
     private var config = CastConfig()
-    private var activeReceiverWs: WebSocket? = null
+    private val clientToSocket = java.util.concurrent.ConcurrentHashMap<String, WebSocket>()
+    private val socketToClient = java.util.concurrent.ConcurrentHashMap<WebSocket, String>()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -221,9 +223,9 @@ class CastService : Service() {
             val statusProvider: () -> String = {
                 val d = _diagnostics.value
                 val curApp = appTrackerManager?.currentApp?.value
-                val appName = curApp?.appName ?: "QuestCast"
+                val appName = curApp?.appName ?: "Standby"
                 _currentApp.value = curApp
-                """{"state":"${d.state}","ip":"${d.ipAddress}","receivers":${d.connectedReceivers},"fps":${d.fps},"currentGame":"$appName"}"""
+                """{"state":"${d.state}","ip":"${d.ipAddress}","receivers":${clientToSocket.size},"fps":${d.fps},"currentGame":"$appName"}"""
             }
             val auditLogProvider: (String?) -> String = { queryParams ->
                 val params = parseQueryParams(queryParams)
@@ -249,7 +251,7 @@ class CastService : Service() {
                 val serial = Build.SERIAL.takeIf { it != Build.UNKNOWN } ?: Build.MODEL
                 val prefs = getSharedPreferences("questcast_prefs", Context.MODE_PRIVATE)
                 val stationName = prefs.getString("station_name", "Station 1 - ${Build.MODEL}") ?: "Station 1"
-                """{"stationName":"$stationName","model":"${Build.MODEL}","serial":"$serial","battery":$batteryPct,"isCharging":$isCharging,"ip":"${d.ipAddress}","httpPort":${config.httpPort},"httpsPort":${config.httpsPort},"wsPort":${config.wsPort},"wssPort":${config.wssPort},"state":"${d.state}","currentGame":"${curApp?.appName ?: "Home"}"}"""
+                """{"stationName":"$stationName","model":"${Build.MODEL}","serial":"$serial","battery":$batteryPct,"isCharging":$isCharging,"ip":"${d.ipAddress}","httpPort":${config.httpPort},"httpsPort":${config.httpsPort},"wsPort":${config.wsPort},"wssPort":${config.wssPort},"state":"${d.state}","currentGame":"${curApp?.appName ?: "Standby"}","receivers":${clientToSocket.size}}"""
             }
             val auditClearHandler: () -> Unit = {
                 appTrackerManager?.clearAuditLog()
@@ -285,45 +287,49 @@ class CastService : Service() {
                 }
             }
 
-            // 2. Start WebSocket Signaling Server(s)
-            val getTotalReceivers: () -> Int = {
-                (signalingServer?.getConnectedCount() ?: 0) + (secureSignalingServer?.getConnectedCount() ?: 0)
-            }
-
+            // 2. Start WebSocket Signaling Server(s) with multi-client routing
             val signalingListener = object : SignalingServer.Listener {
                 override fun onReceiverConnected(conn: WebSocket) {
-                    activeReceiverWs = conn
-                    val count = getTotalReceivers()
+                    val clientId = java.util.UUID.randomUUID().toString().take(8) + "_" + System.identityHashCode(conn)
+                    clientToSocket[clientId] = conn
+                    socketToClient[conn] = clientId
+
+                    val count = clientToSocket.size
                     _diagnostics.value = _diagnostics.value.copy(
                         connectedReceivers = count,
                         state = CastState.RECEIVER_CONNECTED
                     )
-                    Log.i(TAG, "QuestCast: receiver connected (${conn.remoteSocketAddress}), initiating WebRTC offer")
-                    webRtcManager?.createPeerConnection()
-                    webRtcManager?.createAndSendOffer()
+                    Log.i(TAG, "QuestCast: receiver connected (clientId=$clientId, addr=${conn.remoteSocketAddress}, total=$count), initiating WebRTC offer")
+                    webRtcManager?.createPeerConnection(clientId)
+                    webRtcManager?.createAndSendOffer(clientId)
                 }
 
                 override fun onReceiverDisconnected(conn: WebSocket) {
-                    if (activeReceiverWs == conn) {
-                        activeReceiverWs = null
+                    val clientId = socketToClient.remove(conn)
+                    if (clientId != null) {
+                        clientToSocket.remove(clientId)
+                        webRtcManager?.closePeerConnection(clientId)
                     }
-                    val count = getTotalReceivers()
-                    val nextState = if (count > 0) CastState.RECEIVER_CONNECTED else CastState.SERVER_READY
+                    val count = clientToSocket.size
+                    val nextState = if (count > 0) CastState.STREAMING else CastState.SERVER_READY
                     _diagnostics.value = _diagnostics.value.copy(
                         connectedReceivers = count,
                         state = nextState
                     )
-                    Log.i(TAG, "QuestCast: receiver disconnected, remaining receivers: $count")
+                    Log.i(TAG, "QuestCast: receiver disconnected (clientId=$clientId), remaining receivers: $count")
                 }
 
                 override fun onOfferReceived(conn: WebSocket, sdp: String) {
-                    // Quest is sender/offerer, but if receiver sends offer, we can log
                     Log.d(TAG, "QuestCast: unexpected offer received from receiver")
                 }
 
                 override fun onAnswerReceived(conn: WebSocket, sdp: String) {
-                    Log.i(TAG, "QuestCast: received answer from receiver")
-                    webRtcManager?.handleRemoteAnswer(sdp)
+                    val clientId = socketToClient[conn] ?: run {
+                        Log.w(TAG, "QuestCast: received answer from untracked socket ${conn.remoteSocketAddress}")
+                        return
+                    }
+                    Log.i(TAG, "QuestCast: received answer from receiver (clientId=$clientId)")
+                    webRtcManager?.handleRemoteAnswer(clientId, sdp)
                 }
 
                 override fun onIceCandidateReceived(
@@ -332,8 +338,9 @@ class CastService : Service() {
                     sdpMid: String?,
                     sdpMLineIndex: Int
                 ) {
-                    Log.d(TAG, "QuestCast: ICE candidate from receiver")
-                    webRtcManager?.addRemoteIceCandidate(candidate, sdpMid, sdpMLineIndex)
+                    val clientId = socketToClient[conn] ?: return
+                    Log.d(TAG, "QuestCast: ICE candidate from receiver (clientId=$clientId)")
+                    webRtcManager?.addRemoteIceCandidate(clientId, candidate, sdpMid, sdpMLineIndex)
                 }
 
                 override fun onPttAudioReceived(conn: WebSocket, pcmBytes: ByteArray) {
@@ -371,45 +378,55 @@ class CastService : Service() {
                 }
             }
 
-            // 3. Initialize WebRTC Manager & Screen Capture
+            // 3. Initialize WebRTC Manager & Screen Capture with multi-peer listener
             webRtcManager = WebRtcManager(
                 context = applicationContext,
                 config = config,
                 listener = object : WebRtcManager.Listener {
-                    override fun onLocalDescriptionCreated(sdp: String) {
-                        Log.i(TAG, "QuestCast: broadcasting offer to all receivers")
-                        signalingServer?.broadcastOffer(sdp)
-                        secureSignalingServer?.broadcastOffer(sdp)
+                    override fun onLocalDescriptionCreated(clientId: String, sdp: String) {
+                        Log.i(TAG, "QuestCast: sending targeted offer to receiver client $clientId")
+                        val conn = clientToSocket[clientId]
+                        if (conn != null && conn.isOpen) {
+                            val msg = SignalingMessage.Offer(sdp).toJson()
+                            conn.send(msg)
+                        } else {
+                            Log.w(TAG, "QuestCast: cannot send offer, client $clientId socket is not open")
+                        }
                     }
 
-                    override fun onIceCandidateGenerated(candidate: String, sdpMid: String?, sdpMLineIndex: Int) {
-                        signalingServer?.broadcastIceCandidate(candidate, sdpMid, sdpMLineIndex)
-                        secureSignalingServer?.broadcastIceCandidate(candidate, sdpMid, sdpMLineIndex)
+                    override fun onIceCandidateGenerated(clientId: String, candidate: String, sdpMid: String?, sdpMLineIndex: Int) {
+                        val conn = clientToSocket[clientId]
+                        if (conn != null && conn.isOpen) {
+                            val msg = SignalingMessage.IceCandidate(candidate, sdpMid, sdpMLineIndex).toJson()
+                            conn.send(msg)
+                        }
                     }
 
-                    override fun onIceConnectionChange(newState: PeerConnection.IceConnectionState) {
+                    override fun onIceConnectionChange(clientId: String, newState: PeerConnection.IceConnectionState) {
                         _diagnostics.value = _diagnostics.value.copy(iceState = newState.name)
                         if (newState == PeerConnection.IceConnectionState.CONNECTED) {
                             updateState(CastState.STREAMING)
-                            Log.i(TAG, "QuestCast: ICE state = connected! WebRTC streaming live")
+                            Log.i(TAG, "QuestCast: ICE state for $clientId = connected! WebRTC streaming live")
                         } else if (newState == PeerConnection.IceConnectionState.DISCONNECTED ||
                                    newState == PeerConnection.IceConnectionState.FAILED) {
-                            if (_diagnostics.value.connectedReceivers == 0) {
+                            if (clientToSocket.isEmpty()) {
                                 updateState(CastState.SERVER_READY)
                             }
                         }
                     }
 
-                    override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
+                    override fun onConnectionChange(clientId: String, newState: PeerConnection.PeerConnectionState) {
                         _diagnostics.value = _diagnostics.value.copy(connectionState = newState.name)
                         if (newState == PeerConnection.PeerConnectionState.CONNECTED) {
                             updateState(CastState.STREAMING)
                         }
                     }
 
-                    override fun onError(description: String) {
-                        Log.e(TAG, "QuestCast: WebRTC error: $description")
-                        updateState(CastState.ERROR, error = description)
+                    override fun onError(clientId: String?, description: String) {
+                        Log.e(TAG, "QuestCast: WebRTC error (client=$clientId): $description")
+                        if (clientId == null) {
+                            updateState(CastState.ERROR, error = description)
+                        }
                     }
                 }
             ).apply {
@@ -487,7 +504,8 @@ class CastService : Service() {
         }
         intercomManager = null
 
-        activeReceiverWs = null
+        clientToSocket.clear()
+        socketToClient.clear()
         releaseLocks()
 
         _diagnostics.value = DiagnosticsInfo(

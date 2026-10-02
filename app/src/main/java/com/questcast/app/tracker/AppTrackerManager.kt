@@ -4,7 +4,9 @@ import android.app.ActivityManager
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.os.Build
 import com.questcast.app.util.AppLogger as Log
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -83,12 +85,60 @@ data class AppSessionRecord(
 /**
  * Monitors foreground VR applications and maintains a persistent, app-based and date-based
  * audit log of all games and experiences played on Meta Quest 2.
+ * Strictly filters out system shells, OS UI, and background processes to log ONLY installed games/apps
+ * (e.g. Beat Saber, Jurassic World, Henry).
  */
 class AppTrackerManager(private val context: Context) {
     companion object {
         private const val TAG = "QuestCast"
         private const val POLL_INTERVAL_MS = 2000L
         private const val LOG_FILE_NAME = "questcast_audit_log.json"
+
+        // Meta Quest OS, shell, system menus, guardian and telemetry packages that must NEVER be in the audit log
+        private val EXCLUDED_PACKAGES = setOf(
+            "com.oculus.vrshell",
+            "com.oculus.systemux",
+            "com.oculus.shell",
+            "com.oculus.systemactivities",
+            "com.oculus.guardian",
+            "com.oculus.statscollector",
+            "com.oculus.updater",
+            "com.oculus.identity",
+            "com.oculus.assistant",
+            "com.oculus.usersetup",
+            "com.oculus.companion",
+            "com.oculus.firsttimenux",
+            "com.oculus.metacam",
+            "com.oculus.bugreport",
+            "com.oculus.socialplatform",
+            "com.oculus.mediahub",
+            "com.oculus.alpenglow",
+            "com.oculus.telemetry",
+            "com.oculus.unifiedtelemetry",
+            "com.oculus.ocms",
+            "com.oculus.store",
+            "com.oculus.explore",
+            "com.oculus.browser",
+            "com.android.settings",
+            "com.android.systemui"
+        )
+
+        private val EXCLUDED_PREFIXES = listOf(
+            "android",
+            "com.android.",
+            "com.google.android.",
+            "com.qualcomm.",
+            "com.oculus.environment.",
+            "com.facebook.spatial_audio"
+        )
+
+        fun isSystemOrShell(packageName: String, ownPackage: String): Boolean {
+            if (packageName.isBlank()) return true
+            if (packageName == ownPackage) return true
+            if (EXCLUDED_PACKAGES.contains(packageName)) return true
+            if (EXCLUDED_PREFIXES.any { packageName.startsWith(it) }) return true
+            return false
+        }
 
         fun formatDuration(seconds: Long): String {
             val hours = seconds / 3600
@@ -127,10 +177,35 @@ class AppTrackerManager(private val context: Context) {
         loadPersistedLog()
     }
 
+    fun isInstalledGameOrApp(packageName: String): Boolean {
+        if (isSystemOrShell(packageName, context.packageName)) return false
+
+        return try {
+            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+            val isUserApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) == 0 ||
+                            (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+
+            val hasLaunchIntent = packageManager.getLaunchIntentForPackage(packageName) != null
+
+            val isGame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                appInfo.category == ApplicationInfo.CATEGORY_GAME ||
+                (appInfo.flags and ApplicationInfo.FLAG_IS_GAME) != 0
+            } else {
+                (appInfo.flags and ApplicationInfo.FLAG_IS_GAME) != 0
+            }
+
+            isUserApp || hasLaunchIntent || isGame
+        } catch (_: PackageManager.NameNotFoundException) {
+            false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun startTracking() {
         if (isTracking) return
         isTracking = true
-        Log.i(TAG, "QuestCast: Starting App & Game Activity Tracker")
+        Log.i(TAG, "QuestCast: Starting App & Game Activity Tracker (Game-only audit mode)")
 
         trackerScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         trackerScope?.launch {
@@ -179,9 +254,7 @@ class AppTrackerManager(private val context: Context) {
                         }
                     }
                 }
-            } catch (e: Exception) {
-                // Ignore usage stats permission check failure, fallback to running processes
-            }
+            } catch (_: Exception) {}
         }
 
         // 2. Fallback to ActivityManager running processes
@@ -195,25 +268,30 @@ class AppTrackerManager(private val context: Context) {
             } catch (_: Exception) {}
         }
 
-        if (detectedPackage.isNullOrBlank()) return
-
-        // Skip our own caster app so we focus on games and VR experiences
-        if (detectedPackage == context.packageName) return
-
         val active = _currentApp.value
-        if (active == null) {
-            // First tracked app opened
-            openNewSession(detectedPackage, now)
-        } else if (active.packageName != detectedPackage) {
-            // App switch: previous app closed, new app opened
-            Log.i(TAG, "QuestCast Audit: App closed: ${active.appName} (${active.packageName}) after ${active.durationSeconds}s")
-            closeSession(active)
-            openNewSession(detectedPackage, now)
+
+        if (detectedPackage != null && isInstalledGameOrApp(detectedPackage)) {
+            if (active == null) {
+                // First tracked game opened
+                openNewSession(detectedPackage, now)
+            } else if (active.packageName != detectedPackage) {
+                // Switched from one game to another
+                Log.i(TAG, "QuestCast Audit: Switched from ${active.appName} to $detectedPackage after ${active.durationSeconds}s")
+                closeSession(active)
+                openNewSession(detectedPackage, now)
+            } else {
+                // Same game still active, update duration
+                active.durationSeconds = (now - active.startTimeMs) / 1000
+                _currentApp.value = active
+                _auditLog.value = sessions.toList()
+            }
         } else {
-            // Same app still active, update duration
-            active.durationSeconds = (now - active.startTimeMs) / 1000
-            _currentApp.value = active
-            _auditLog.value = sessions.toList()
+            // Player is in Quest Home, system shell, guardian, or settings
+            if (active != null) {
+                Log.i(TAG, "QuestCast Audit: Exited game ${active.appName} (${active.packageName}) after ${active.durationSeconds}s to system shell/home")
+                closeSession(active)
+                _currentApp.value = null
+            }
         }
     }
 
@@ -232,7 +310,7 @@ class AppTrackerManager(private val context: Context) {
             isActive = true
         )
 
-        Log.i(TAG, "QuestCast Audit: App opened: $appName ($packageName) on $dateStr at $formattedStart")
+        Log.i(TAG, "QuestCast Audit: Game opened: $appName ($packageName) on $dateStr at $formattedStart")
         sessions.add(0, record)
         _currentApp.value = record
         _auditLog.value = sessions.toList()
@@ -252,17 +330,17 @@ class AppTrackerManager(private val context: Context) {
     private fun resolveAppName(packageName: String): String {
         return try {
             val appInfo = packageManager.getApplicationInfo(packageName, 0)
-            packageManager.getApplicationLabel(appInfo).toString()
+            val label = packageManager.getApplicationLabel(appInfo).toString()
+            if (label.isNotBlank()) label else cleanPackageName(packageName)
         } catch (_: Exception) {
-            when (packageName) {
-                "com.oculus.vrshell" -> "Quest Home / System"
-                "com.oculus.browser" -> "Meta Quest Browser"
-                "com.oculus.explore" -> "Explore"
-                "com.oculus.store" -> "Meta Quest Store"
-                "com.oculus.systemux" -> "System Menu"
-                else -> packageName.substringAfterLast('.')
-            }
+            cleanPackageName(packageName)
         }
+    }
+
+    private fun cleanPackageName(packageName: String): String {
+        return packageName.substringAfterLast('.')
+            .replace('_', ' ')
+            .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
     }
 
     @Synchronized
@@ -294,10 +372,14 @@ class AppTrackerManager(private val context: Context) {
             sessions.clear()
             for (i in 0 until jsonArray.length()) {
                 val obj = jsonArray.getJSONObject(i)
-                sessions.add(AppSessionRecord.fromJsonObject(obj))
+                val record = AppSessionRecord.fromJsonObject(obj)
+                // Filter out any legacy system shell entries that were logged previously
+                if (!isSystemOrShell(record.packageName, context.packageName)) {
+                    sessions.add(record)
+                }
             }
             _auditLog.value = sessions.toList()
-            Log.i(TAG, "QuestCast Audit: Loaded ${sessions.size} persisted sessions from disk")
+            Log.i(TAG, "QuestCast Audit: Loaded ${sessions.size} persisted game sessions from disk")
         } catch (e: Exception) {
             Log.w(TAG, "QuestCast Audit: Could not parse persisted log file", e)
         }

@@ -217,6 +217,13 @@
       } else if (state === 'disconnected' || state === 'failed') {
         setStatus('Reconnecting', 'error');
         showOverlay('Stream Interrupted', 'WebRTC connection dropped. Recovering...', true);
+        if (state === 'failed') {
+          setTimeout(() => {
+            if (pc && pc.connectionState === 'failed') {
+              connect();
+            }
+          }, 2000);
+        }
       }
     };
 

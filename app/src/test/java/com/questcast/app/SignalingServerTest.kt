@@ -155,8 +155,48 @@ class SignalingServerTest {
         val connected2 = client2.connectBlocking(5, TimeUnit.SECONDS)
         assertTrue("Client 2 should connect", connected2)
         Thread.sleep(100)
-        assertEquals(1, server?.getConnectedCount())
         client2.closeBlocking()
+    }
+
+    @Test
+    fun testConcurrentMultiClientSignaling() {
+        val client1Messages = mutableListOf<String>()
+        val client2Messages = mutableListOf<String>()
+
+        val client1 = object : WebSocketClient(URI("ws://127.0.0.1:$testPort/")) {
+            override fun onOpen(handshakedata: ServerHandshake?) {}
+            override fun onMessage(message: String?) {
+                if (message != null) client1Messages.add(message)
+            }
+            override fun onClose(code: Int, reason: String?, remote: Boolean) {}
+            override fun onError(ex: java.lang.Exception?) {}
+        }
+
+        val client2 = object : WebSocketClient(URI("ws://127.0.0.1:$testPort/")) {
+            override fun onOpen(handshakedata: ServerHandshake?) {}
+            override fun onMessage(message: String?) {
+                if (message != null) client2Messages.add(message)
+            }
+            override fun onClose(code: Int, reason: String?, remote: Boolean) {}
+            override fun onError(ex: java.lang.Exception?) {}
+        }
+
+        // Both clients connect simultaneously
+        assertTrue("Client 1 should connect", client1.connectBlocking(5, TimeUnit.SECONDS))
+        assertTrue("Client 2 should connect", client2.connectBlocking(5, TimeUnit.SECONDS))
+        Thread.sleep(150)
+
+        assertEquals("Server should have 2 connected clients concurrently", 2, server?.getConnectedCount())
+
+        // Disconnect Client 1, Client 2 should stay connected
+        client1.closeBlocking()
+        Thread.sleep(150)
+        assertEquals("Server should have 1 connected client remaining", 1, server?.getConnectedCount())
+
+        // Disconnect Client 2
+        client2.closeBlocking()
+        Thread.sleep(150)
+        assertEquals("Server should have 0 connected clients", 0, server?.getConnectedCount())
     }
 }
 

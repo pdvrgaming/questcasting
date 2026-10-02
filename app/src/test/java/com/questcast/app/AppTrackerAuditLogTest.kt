@@ -65,4 +65,30 @@ class AppTrackerAuditLogTest {
         assertEquals("Active", json.getString("formattedEndTime"))
         assertEquals("10m 0s", json.getString("formattedDuration"))
     }
+
+    @Test
+    fun testSystemShellPackageFiltering() {
+        val ownPkg = "com.questcast.app"
+
+        // System shells and OS UI should be identified as system/shell (filtered out)
+        assertTrue(AppTrackerManager.isSystemOrShell("com.oculus.vrshell", ownPkg))
+        assertTrue(AppTrackerManager.isSystemOrShell("com.oculus.systemux", ownPkg))
+        assertTrue(AppTrackerManager.isSystemOrShell("com.oculus.shell", ownPkg))
+        assertTrue(AppTrackerManager.isSystemOrShell("com.oculus.guardian", ownPkg))
+        assertTrue(AppTrackerManager.isSystemOrShell("com.oculus.store", ownPkg))
+        assertTrue(AppTrackerManager.isSystemOrShell("com.oculus.explore", ownPkg))
+        assertTrue(AppTrackerManager.isSystemOrShell("com.oculus.browser", ownPkg))
+        assertTrue(AppTrackerManager.isSystemOrShell("com.android.settings", ownPkg))
+        assertTrue(AppTrackerManager.isSystemOrShell("com.android.systemui", ownPkg))
+        assertTrue(AppTrackerManager.isSystemOrShell("com.oculus.environment.colosseum", ownPkg))
+        assertTrue(AppTrackerManager.isSystemOrShell("com.questcast.app", ownPkg)) // Own app
+
+        // Legitimate VR games and apps should NOT be filtered as system/shell
+        assertFalse(AppTrackerManager.isSystemOrShell("com.beatgames.beatsaber", ownPkg))
+        assertFalse(AppTrackerManager.isSystemOrShell("com.Universal.JurassicWorldAftermath", ownPkg))
+        assertFalse(AppTrackerManager.isSystemOrShell("com.forcefieldvr.jwe", ownPkg))
+        assertFalse(AppTrackerManager.isSystemOrShell("com.oculus.henry", ownPkg))
+        assertFalse(AppTrackerManager.isSystemOrShell("com.superhot.vr", ownPkg))
+        assertFalse(AppTrackerManager.isSystemOrShell("com.owlchemy.jobsimulator", ownPkg))
+    }
 }
