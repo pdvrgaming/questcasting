@@ -117,10 +117,51 @@ def ensure_apk_exists():
     return True
 
 
-def get_connected_devices():
+def auto_discover_wifi_devices():
+    """Scan local subnet for any headsets with wireless ADB enabled on port 5555."""
+    import socket
+    import concurrent.futures
+
+    local_ip = "192.168.0.1"
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        pass
+
+    parts = local_ip.split(".")
+    if len(parts) != 4:
+        return []
+    base_subnet = f"{parts[0]}.{parts[1]}.{parts[2]}."
+
+    def check_ip(ip):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.35)
+        try:
+            if s.connect_ex((ip, 5555)) == 0:
+                return ip
+        except Exception:
+            pass
+        finally:
+            s.close()
+        return None
+
+    candidates = [f"{base_subnet}{i}" for i in range(1, 255)]
+    found = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=35) as ex:
+        for res in ex.map(check_ip, candidates):
+            if res:
+                found.append(res)
+    return found
+
+
+def get_connected_devices(try_wifi_discovery=True):
     """Return list of connected device serials (excluding unauthorized/offline)."""
     code, out, err = run_adb("devices -l")
     devices = []
+    unauthorized_count = 0
     for line in out.splitlines():
         line = line.strip()
         if not line or line.startswith("List of devices"):
@@ -134,7 +175,18 @@ def get_connected_devices():
                 model = model_match.group(1) if model_match else "Android Device"
                 devices.append({"serial": serial, "model": model, "raw": line})
             elif status == "unauthorized":
-                print(f"{YELLOW}[!] Device {serial} is unauthorized. Put on the headset and click 'Allow USB Debugging'.{RESET}")
+                unauthorized_count += 1
+                print(f"{YELLOW}[!] Device {serial} is unauthorized. Put on the headset and click 'Always Allow from this computer'.{RESET}")
+
+    # If no devices found via USB, auto-scan Wi-Fi for wireless ADB on port 5555
+    if not devices and unauthorized_count == 0 and try_wifi_discovery:
+        wifi_ips = auto_discover_wifi_devices()
+        if wifi_ips:
+            for wip in wifi_ips:
+                print(f"{CYAN}[*] Auto-detected wireless Quest on {wip}:5555, connecting...{RESET}")
+                run_adb(f"connect {wip}:5555")
+            # Re-read devices
+            return get_connected_devices(try_wifi_discovery=False)
 
     return devices
 
@@ -262,6 +314,8 @@ def main():
     print(f"[*] Using ADB: {DIM}{ADB}{RESET}")
     print(f"[*] Target APK: {DIM}{APK_PATH}{RESET}\n")
 
+    run_adb("start-server")
+
     if not ensure_apk_exists():
         sys.exit(1)
 
@@ -292,8 +346,12 @@ def main():
 
     # Loop or Waiting Mode
     if count == 0:
-        print(f"{YELLOW}[?] No Quest headsets detected yet.{RESET}")
-        print(f"{CYAN}[*] Connect your Quest headset to your PC with a USB-C cable (or turn on Wi-Fi).{RESET}")
+        print(f"\n{YELLOW}[?] No Quest headsets detected yet.{RESET}")
+        print(f"{CYAN}[*] Quick Troubleshooting Checklist:{RESET}")
+        print(f"    1. {BOLD}USB-C Cable:{RESET} Ensure cable is plugged into PC and headset.")
+        print(f"    2. {BOLD}Developer Mode:{RESET} Ensure Developer Mode is ON in Meta Quest mobile app.")
+        print(f"    3. {BOLD}In-VR Popup:{RESET} Put on headset and click 'Always Allow from this computer'.")
+        print(f"    4. {BOLD}Wi-Fi Connection:{RESET} You can connect directly over Wi-Fi: {CYAN}python install.py --connect <IP>{RESET}\n")
         print(f"{DIM}    Waiting for headset connection (Press Ctrl+C to cancel)...{RESET}")
 
     try:
