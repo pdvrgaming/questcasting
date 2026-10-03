@@ -21,7 +21,7 @@
 
   <!-- Offline Status Banner -->
   <div class="offline-banner" id="offlineBanner">
-    ⚡ Running in 100% Offline Local Wi-Fi Mode (Cached PWA)
+    ⚡ 100% Offline Wi-Fi Mode (Cached PWA)
   </div>
 
   <!-- App Header -->
@@ -31,122 +31,85 @@
         <img src="./icons/icon-192.png" alt="QuestCast Logo">
       </div>
       <div class="brand-text">
-        <h1>QuestCast <span class="brand-badge">Hub</span></h1>
+        <h1>QuestCast <span class="brand-badge" id="statusBadge">Hub</span></h1>
       </div>
     </div>
 
     <div class="header-actions">
+      <span class="active-pill" id="activePill">0 Online</span>
+
       <button class="btn-glass" id="btnWakeLock" title="Keep Screen Awake">
         <svg id="iconWakeLock" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
         <span>Wake Lock</span>
       </button>
 
-      <button class="btn-glass" id="btnScanSubnet" title="Auto-Scan Wi-Fi Subnet">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <span>Scan</span>
-      </button>
-
       <button class="btn-glass btn-primary" id="btnAddStation">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        <span>Add</span>
+        <span>Add IP</span>
       </button>
     </div>
   </header>
 
-  <!-- Sub-Bar / Hub Status Metrics -->
-  <div class="hub-subbar">
-    <div class="hub-metrics">
-      <div class="metric-pill">
-        <span class="metric-dot online"></span>
-        <span id="activeStationCount">0 Streaming</span>
-      </div>
-      <div class="metric-pill">
-        <span id="totalStationCount">2 Stations</span>
-      </div>
-    </div>
-    <div style="font-size:0.75rem; color:var(--text-muted);">
-      Direct Multi-Peer WebRTC • Zero Relay Lag
-    </div>
-  </div>
-
-  <!-- Main Multi-Headset Video Grid -->
+  <!-- Main Multi-Headset Video Stage -->
   <main class="stations-container">
+    <!-- Standby Hero: Visible only when 0 headsets are connected -->
+    <div class="standby-hero" id="standbyHero">
+      <div class="standby-icon">
+        <img src="./icons/icon-192.png" alt="QuestCast Standby">
+      </div>
+      <h2>Waiting for Quest Headsets...</h2>
+      <p>Ensure QuestCast app is running on your Meta Quest 2 and connected to the same Wi-Fi.</p>
+      
+      <div class="quick-add-box">
+        <input type="text" id="quickAddIp" placeholder="Enter Headset IP (e.g. 192.168.0.232)">
+        <button class="btn-glass btn-primary" id="btnQuickAdd">Connect</button>
+      </div>
+
+      <div class="saved-ips-list" id="savedIpsList">
+        <!-- Monitored IPs listed here -->
+      </div>
+    </div>
+
+    <!-- Active Connected Cards Grid -->
     <div class="stations-grid" id="stationsGrid">
-      <!-- Station cards rendered dynamically by app.js -->
+      <!-- Only CONNECTED headsets rendered here dynamically -->
     </div>
   </main>
 
-  <!-- Global Floating Broadcast Push-to-Talk Intercom Bar -->
-  <div class="broadcast-bar">
+  <!-- Global Broadcast Bar: Visible ONLY when 2 or more headsets are streaming -->
+  <div class="broadcast-bar hidden" id="broadcastBar">
     <button class="btn-broadcast-ptt" id="btnBroadcastPtt">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
       <span>BROADCAST TO ALL</span>
     </button>
-    <canvas class="broadcast-visualizer" id="broadcastVisualizer" width="90" height="28"></canvas>
   </div>
 
-  <!-- Modal: Add / Edit Headset Station -->
+  <!-- Modal: Add Headset IP -->
   <div class="modal-backdrop" id="modalAddStation">
     <div class="modal-sheet">
       <div class="modal-header">
-        <h3>Add Headset Station</h3>
+        <h3>Connect Headset</h3>
         <button class="btn-glass btn-icon-only" id="btnCloseModal">✕</button>
       </div>
       <div class="modal-body">
-        <div class="ssl-helper-banner">
-          <strong>Tip for iOS Safari & Chrome:</strong>
-          If connecting over HTTPS (GitHub Pages), the browser may require accepting the local headset SSL certificate once.
-          <a href="https://192.168.0.168:8443" target="_blank">Authorize 192.168.0.168</a> or <a href="https://192.168.0.232:8443" target="_blank">Authorize 192.168.0.232</a> (Tap Advanced &rarr; Proceed).
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="inputStationName">Station Label</label>
-          <input type="text" class="form-input" id="inputStationName" placeholder="e.g. Station 1 (Player A)">
-        </div>
-
         <div class="form-group">
           <label class="form-label" for="inputStationIp">Quest Wi-Fi IP Address</label>
-          <input type="text" class="form-input" id="inputStationIp" placeholder="e.g. 192.168.0.168">
+          <input type="text" class="form-input" id="inputStationIp" placeholder="e.g. 192.168.0.232">
         </div>
 
         <div class="form-group">
-          <label class="form-label">Signaling Protocol</label>
-          <div class="protocol-toggle-group">
-            <div class="protocol-chip selected" data-proto="wss">WSS (8089 / Secure)</div>
-            <div class="protocol-chip" data-proto="ws">WS (8088 / Standard)</div>
-          </div>
+          <label class="form-label" for="inputStationName">Station Label (Optional)</label>
+          <input type="text" class="form-input" id="inputStationName" placeholder="e.g. Station 2">
+        </div>
+
+        <div class="ssl-helper-banner">
+          <strong>Tip:</strong> If using HTTPS on Chrome/Safari, accept the Quest's local SSL certificate once:
+          <span id="sslLinks"></span>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn-glass" id="btnCancelAdd">Cancel</button>
-        <button class="btn-glass btn-primary" id="btnSaveStation">Connect Station</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal: Subnet Auto-Scanner -->
-  <div class="modal-backdrop" id="modalScanSubnet">
-    <div class="modal-sheet">
-      <div class="modal-header">
-        <h3>Auto-Discover Quest Headsets</h3>
-        <button class="btn-glass btn-icon-only" id="btnCloseScanModal">✕</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-group">
-          <label class="form-label" for="inputSubnetBase">Subnet Prefix</label>
-          <input type="text" class="form-input" id="inputSubnetBase" value="192.168.0.">
-        </div>
-
-        <div style="font-size:0.8rem; color:var(--text-secondary);" id="scanProgress">
-          Ready to scan local Wi-Fi subnet for active QuestCast APK instances.
-        </div>
-
-        <div id="scanResultsList" style="max-height: 220px; overflow-y: auto;">
-          <!-- Discovered devices populated here -->
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-glass btn-primary" id="btnStartScan">Start Scan</button>
+        <button class="btn-glass btn-primary" id="btnSaveStation">Connect Headset</button>
       </div>
     </div>
   </div>

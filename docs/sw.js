@@ -3,7 +3,7 @@
  * Enables 100% offline PWA caching on iPhone and Android devices.
  */
 
-const CACHE_NAME = 'questcast-hub-v1';
+const CACHE_NAME = 'questcast-hub-v2';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -36,9 +36,21 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
+  const reqUrl = event.request.url;
 
-  // Do not intercept WebSockets, API calls, or local headset IPs
+  // Only handle http and https requests (safely ignore chrome-extension, blob, data, etc.)
+  if (!reqUrl.startsWith('http://') && !reqUrl.startsWith('https://')) {
+    return;
+  }
+
+  // Do not intercept non-GET requests
+  if (event.request.method !== 'GET') {
+    return;
+  }
+
+  const url = new URL(reqUrl);
+
+  // Do not intercept WebSockets, API calls, or local private LAN IPs
   if (
     url.protocol.startsWith('ws') ||
     url.pathname.startsWith('/api/') ||
@@ -56,7 +68,7 @@ self.addEventListener('fetch', (event) => {
         // Return cached version immediately, but refresh cache in background
         fetch(event.request)
           .then((networkResponse) => {
-            if (networkResponse && networkResponse.status === 200) {
+            if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
               caches.open(CACHE_NAME).then((cache) => {
                 cache.put(event.request, networkResponse);
               });

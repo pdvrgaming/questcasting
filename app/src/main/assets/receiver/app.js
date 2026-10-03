@@ -598,38 +598,38 @@
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  // Audit Tab Buttons
-  tabByApp.addEventListener('click', () => {
+  // Audit Tab Buttons (if present)
+  tabByApp?.addEventListener('click', () => {
     activeAuditView = 'app';
-    tabByApp.classList.add('active');
-    tabByDate.classList.remove('active');
-    tabRawSessions.classList.remove('active');
+    tabByApp?.classList.add('active');
+    tabByDate?.classList.remove('active');
+    tabRawSessions?.classList.remove('active');
     renderAuditView();
   });
 
-  tabByDate.addEventListener('click', () => {
+  tabByDate?.addEventListener('click', () => {
     activeAuditView = 'date';
-    tabByDate.classList.add('active');
-    tabByApp.classList.remove('active');
-    tabRawSessions.classList.remove('active');
+    tabByDate?.classList.add('active');
+    tabByApp?.classList.remove('active');
+    tabRawSessions?.classList.remove('active');
     renderAuditView();
   });
 
-  tabRawSessions.addEventListener('click', () => {
+  tabRawSessions?.addEventListener('click', () => {
     activeAuditView = 'raw';
-    tabRawSessions.classList.add('active');
-    tabByApp.classList.remove('active');
-    tabByDate.classList.remove('active');
+    tabRawSessions?.classList.add('active');
+    tabByApp?.classList.remove('active');
+    tabByDate?.classList.remove('active');
     renderAuditView();
   });
 
-  filterDateSelect.addEventListener('change', fetchAuditLog);
-  filterAppSelect.addEventListener('change', fetchAuditLog);
+  filterDateSelect?.addEventListener('change', fetchAuditLog);
+  filterAppSelect?.addEventListener('change', fetchAuditLog);
 
   // CSV Export Trigger
-  btnExportCsv.addEventListener('click', () => {
-    const date = filterDateSelect.value;
-    const app = filterAppSelect.value;
+  btnExportCsv?.addEventListener('click', () => {
+    const date = filterDateSelect?.value;
+    const app = filterAppSelect?.value;
     let url = `/api/audit-log/export.csv?`;
     if (date) url += `date=${encodeURIComponent(date)}&`;
     if (app) url += `app=${encodeURIComponent(app)}&`;
@@ -637,7 +637,7 @@
   });
 
   // Clear Audit Log
-  btnClearLog.addEventListener('click', async () => {
+  btnClearLog?.addEventListener('click', async () => {
     if (!confirm('Are you sure you want to permanently clear the audit log records?')) return;
     try {
       const res = await fetch(`/api/audit-log/clear`, { method: 'POST' });
@@ -650,12 +650,12 @@
     }
   });
 
-  btnAuditLog.addEventListener('click', () => {
-    modalAuditLog.classList.remove('hidden');
+  btnAuditLog?.addEventListener('click', () => {
+    modalAuditLog?.classList.remove('hidden');
     fetchAuditLog();
   });
-  btnCloseAuditModal.addEventListener('click', () => {
-    modalAuditLog.classList.add('hidden');
+  btnCloseAuditModal?.addEventListener('click', () => {
+    modalAuditLog?.classList.add('hidden');
   });
 
   // --- Fullscreen & Layout Controls ---
@@ -735,7 +735,7 @@
   appContainer.addEventListener('mousemove', wakeExitButton);
   appContainer.addEventListener('touchstart', wakeExitButton, { passive: true });
 
-  btnSound.addEventListener('click', toggleSound);
+  btnSound?.addEventListener('click', toggleSound);
   btnReconnect.addEventListener('click', () => {
     isManuallyDisconnected = false;
     connect();
