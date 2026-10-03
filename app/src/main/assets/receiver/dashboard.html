@@ -1,0 +1,1627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0d14">
+  <title>QuestCast Multi-Station Operator Hub</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <style>
+    :root {
+      --bg-dark: #07090e;
+      --bg-card: #0f1523;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --accent-cyan: #00e5ff;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-red: #ef4444;
+      --text-main: #f8fafc;
+      --text-dim: #94a3b8;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Top Operator Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 20px;
+      background: #0d121d;
+      border-bottom: 1px solid var(--border-color);
+      z-index: 50;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .brand span.tag {
+      font-size: 0.7rem;
+      background: rgba(0, 229, 255, 0.15);
+      color: var(--accent-cyan);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      padding: 2px 8px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .nav-buttons {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .btn {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+      outline: none;
+    }
+
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: var(--accent-cyan);
+    }
+
+    .btn-primary {
+      background: var(--accent-cyan);
+      color: #040914;
+      border-color: var(--accent-cyan);
+    }
+
+    .btn-primary:hover {
+      background: #33ecff;
+    }
+
+    .btn-broadcast-ptt {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: var(--accent-red);
+      font-weight: 700;
+    }
+
+    .btn-broadcast-ptt:hover {
+      background: rgba(239, 68, 68, 0.3);
+      border-color: var(--accent-red);
+    }
+
+    .btn-broadcast-ptt.ptt-active {
+      background: rgba(239, 68, 68, 0.9) !important;
+      color: #fff !important;
+      box-shadow: 0 0 16px rgba(239, 68, 68, 0.8) !important;
+    }
+
+    /* Adaptive Video Grid */
+    .grid-container {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      gap: 8px;
+      padding: 8px;
+      background: #000;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .grid-container.stations-1 {
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr;
+    }
+
+    .grid-container.stations-2 {
+      grid-template-columns: repeat(2, 1fr);
+      grid-template-rows: 1fr;
+    }
+
+    .grid-container.stations-3,
+    .grid-container.stations-4 {
+      grid-template-columns: repeat(2, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+    }
+
+    .station-tile {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .station-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 12px;
+      background: rgba(15, 23, 42, 0.85);
+      border-bottom: 1px solid var(--border-color);
+      z-index: 10;
+    }
+
+    .station-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #64748b;
+    }
+
+    .status-dot.online {
+      background: var(--accent-green);
+      box-shadow: 0 0 8px var(--accent-green);
+    }
+
+    .status-dot.connecting {
+      background: var(--accent-amber);
+    }
+
+    .station-meta {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tile-ptt-btn {
+      background: rgba(0, 229, 255, 0.12);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      color: var(--accent-cyan);
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      outline: none;
+    }
+
+    .tile-ptt-btn:hover {
+      background: rgba(0, 229, 255, 0.25);
+    }
+
+    .tile-ptt-btn.ptt-active {
+      background: var(--accent-red) !important;
+      border-color: #ef4444 !important;
+      color: #fff !important;
+      box-shadow: 0 0 10px var(--accent-red) !important;
+    }
+
+    .video-viewport {
+      flex: 1;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      cursor: pointer;
+    }
+
+    .video-viewport video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .tile-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      pointer-events: none;
+    }
+
+    /* Maximize Tile to Fullscreen inside Dashboard */
+    .station-tile.maximized {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 100;
+      border-radius: 0;
+      border: none;
+    }
+
+    .station-tile.maximized .station-header {
+      display: none;
+    }
+
+    /* Floating Exit Button for Maximized Station */
+    .floating-close-btn {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(15, 23, 42, 0.8);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      backdrop-filter: blur(12px);
+      padding: 8px 16px;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      z-index: 200;
+      transition: all 0.2s;
+    }
+
+    .floating-close-btn:hover {
+      background: rgba(239, 68, 68, 0.9);
+      border-color: var(--accent-red);
+    }
+
+    /* Modals */
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 300;
+      padding: 20px;
+    }
+
+    .modal-card {
+      background: #101625;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      width: 100%;
+      max-width: 600px;
+      max-height: 85vh;
+      overflow-y: auto;
+      padding: 24px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .modal-header h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+    }
+
+    .station-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 12px;
+      align-items: center;
+    }
+
+    .station-row input {
+      background: #090c13;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+    }
+
+    .station-row input.name-input { flex: 1.2; }
+    .station-row input.ip-input { flex: 1.5; }
+
+    .station-row button.del-btn {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: var(--accent-red);
+      width: 34px;
+      height: 34px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    /* Audit UI */
+    .metrics-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .metric-pill {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 10px;
+      text-align: center;
+    }
+
+    .metric-pill .metric-val {
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: var(--accent-cyan);
+      font-family: monospace;
+    }
+
+    .metric-pill .metric-lbl {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      margin-top: 3px;
+      text-transform: uppercase;
+    }
+
+    .view-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 8px;
+    }
+
+    .tab-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: var(--text-dim);
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .tab-btn.active {
+      background: rgba(0, 229, 255, 0.15);
+      border-color: var(--accent-cyan);
+      color: var(--accent-cyan);
+    }
+
+    .filter-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+
+    .filter-select {
+      background: #090e1a;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+    }
+
+    .audit-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      text-align: left;
+    }
+
+    .audit-table th {
+      padding: 8px 10px;
+      color: var(--text-dim);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      font-weight: 600;
+    }
+
+    .audit-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .duration-tag {
+      font-weight: 700;
+      color: var(--accent-green);
+      font-family: monospace;
+    }
+
+    .hidden { display: none !important; }
+
+    /* Responsive adjustments for Tablets & Smartphones */
+    @media (max-width: 768px) {
+      header {
+        padding: 8px 12px;
+      }
+      .brand span:first-of-type {
+        font-size: 1rem;
+      }
+      .btn {
+        padding: 6px 10px;
+        font-size: 0.8rem;
+      }
+    }
+
+    @media (max-width: 640px) {
+      header {
+        padding: 6px 10px;
+      }
+      .brand {
+        gap: 6px;
+        font-size: 0.9rem;
+      }
+      .brand svg {
+        width: 18px;
+        height: 18px;
+      }
+      .brand span.tag {
+        font-size: 0.6rem;
+        padding: 1px 5px;
+      }
+      .nav-buttons {
+        gap: 4px;
+      }
+      .btn {
+        padding: 6px 8px;
+        font-size: 0.75rem;
+      }
+      .btn span.btn-label {
+        display: none;
+      }
+      #broadcastPttText {
+        display: none;
+      }
+
+      /* On portrait mobile, stack stations or use 1-column scrollable grid */
+      @media (orientation: portrait) {
+        .grid-container {
+          grid-template-columns: 1fr;
+          grid-template-rows: repeat(4, minmax(220px, 1fr));
+          overflow-y: auto;
+        }
+      }
+    }
+
+    @media (max-width: 420px) {
+      .brand span.tag {
+        display: none;
+      }
+      .brand span:first-of-type {
+        font-size: 0.85rem;
+      }
+      .btn {
+        padding: 5px 6px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Header Bar -->
+  <header>
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2">
+        <path d="M4 8h16a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-4l-2 2-2-2H4a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z"></path>
+        <circle cx="8" cy="13" r="2"></circle>
+        <circle cx="16" cy="13" r="2"></circle>
+      </svg>
+      <span>QuestCast Operator Hub</span>
+      <span class="tag">4-Station Multi-View</span>
+    </div>
+
+    <div class="nav-buttons">
+      <!-- Broadcast Push-to-Talk -->
+      <button id="btnBroadcastPtt" class="btn btn-broadcast-ptt" title="Hold to speak to ALL 4 headsets simultaneously">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+          <line x1="12" y1="19" x2="12" y2="23"></line>
+          <line x1="8" y1="23" x2="16" y2="23"></line>
+        </svg>
+        <span id="broadcastPttText">Broadcast PTT (All)</span>
+      </button>
+
+      <button id="btnManageStations" class="btn" title="Configure Stations">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        <span class="btn-label">Stations</span>
+      </button>
+
+      <button id="btnAuditLog" class="btn" title="App & Date Activity Logs">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+        </svg>
+        <span class="btn-label">Activity & Audit</span>
+      </button>
+
+      <a href="index.html" class="btn btn-primary" title="Single View" style="text-decoration:none;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+        </svg>
+        <span class="btn-label">Solo View</span>
+      </a>
+    </div>
+  </header>
+
+  <!-- 4-Grid Stage -->
+  <div class="grid-container" id="gridContainer"></div>
+
+  <!-- Manage Stations Modal -->
+  <div class="modal-backdrop hidden" id="modalStations">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Manage VR Headset Stations</h3>
+        <button id="btnCloseModal" class="btn">&times;</button>
+      </div>
+      <p style="font-size:0.85rem; color:var(--text-dim); margin-bottom:16px;">
+        Add your 4 Quest headsets with their local IP addresses. Push-to-Talk and Screen Mirroring will target each station independently.
+      </p>
+      <div id="stationList"></div>
+      <div style="margin-top:16px; display:flex; justify-content:space-between;">
+        <button id="btnAddStation" class="btn">+ Add Station</button>
+        <button id="btnSaveStations" class="btn btn-primary">Save & Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- App-Based & Date-Based Audit Log Modal -->
+  <div class="modal-backdrop hidden" id="modalAuditLog">
+    <div class="modal-card" style="max-width:780px;">
+      <div class="modal-header">
+        <h3>VR Game Activity & Audit Logs (App & Date Based)</h3>
+        <button id="btnCloseAuditModal" class="btn">&times;</button>
+      </div>
+
+      <!-- Station Selector for Multi-Headset Logs -->
+      <div style="margin-bottom:14px; display:flex; align-items:center; gap:10px;">
+        <label style="font-size:0.85rem; color:var(--text-dim);">Select Headset Station:</label>
+        <select id="auditStationSelect" class="filter-select" style="font-weight:600;"></select>
+      </div>
+
+      <!-- Top Overview Metrics -->
+      <div class="metrics-row">
+        <div class="metric-pill">
+          <div class="metric-val" id="metricTotalTime">0m</div>
+          <div class="metric-lbl">Total Play Time</div>
+        </div>
+        <div class="metric-pill">
+          <div class="metric-val" id="metricTotalSessions">0</div>
+          <div class="metric-lbl">Total Sessions</div>
+        </div>
+        <div class="metric-pill">
+          <div class="metric-val" id="metricAppsCount">0</div>
+          <div class="metric-lbl">Games Tracked</div>
+        </div>
+        <div class="metric-pill">
+          <div class="metric-val" id="metricActiveApp">Standby</div>
+          <div class="metric-lbl">Currently Playing</div>
+        </div>
+      </div>
+
+      <!-- View Selector Tabs -->
+      <div class="view-tabs">
+        <button class="tab-btn active" id="tabByApp">By App / Game</button>
+        <button class="tab-btn" id="tabByDate">By Date</button>
+        <button class="tab-btn" id="tabRaw">All Sessions</button>
+      </div>
+
+      <!-- Filter Bar -->
+      <div class="filter-bar">
+        <div style="display:flex; gap:10px; align-items:center;">
+          <label style="font-size:0.8rem; color:var(--text-dim);">Date:</label>
+          <select id="filterDateSelect" class="filter-select">
+            <option value="">All Dates</option>
+          </select>
+
+          <label style="font-size:0.8rem; color:var(--text-dim); margin-left:6px;">Game:</label>
+          <select id="filterAppSelect" class="filter-select">
+            <option value="">All Games</option>
+          </select>
+        </div>
+
+        <div style="display:flex; gap:8px;">
+          <button id="btnExportCsv" class="btn" style="padding:4px 12px; font-size:0.8rem; background:rgba(16,185,129,0.15); border-color:rgba(16,185,129,0.3); color:var(--accent-green);">
+            Export CSV
+          </button>
+          <button id="btnClearLog" class="btn" style="padding:4px 10px; font-size:0.8rem; background:rgba(239,68,68,0.1); border-color:rgba(239,68,68,0.3); color:var(--accent-red);">
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <!-- Audit Content Container -->
+      <div id="auditLogContent" style="max-height:420px; overflow-y:auto;">
+        <p style="color:var(--text-dim); text-align:center; padding:20px;">Select a station to view records.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      const isHttps = window.location.protocol === 'https:';
+      const wsProto = isHttps ? 'wss:' : 'ws:';
+      const wsPort = isHttps ? 8089 : 8088;
+      const httpProto = isHttps ? 'https:' : 'http:';
+      const httpPort = isHttps ? 8443 : 8080;
+
+      const gridContainer = document.getElementById('gridContainer');
+      const btnManageStations = document.getElementById('btnManageStations');
+      const btnAuditLog = document.getElementById('btnAuditLog');
+      const btnBroadcastPtt = document.getElementById('btnBroadcastPtt');
+      const broadcastPttText = document.getElementById('broadcastPttText');
+      const modalStations = document.getElementById('modalStations');
+      const modalAuditLog = document.getElementById('modalAuditLog');
+      const btnCloseModal = document.getElementById('btnCloseModal');
+      const btnCloseAuditModal = document.getElementById('btnCloseAuditModal');
+      const stationList = document.getElementById('stationList');
+      const btnAddStation = document.getElementById('btnAddStation');
+      const btnSaveStations = document.getElementById('btnSaveStations');
+      const auditLogContent = document.getElementById('auditLogContent');
+      const auditStationSelect = document.getElementById('auditStationSelect');
+
+      const metricTotalTime = document.getElementById('metricTotalTime');
+      const metricTotalSessions = document.getElementById('metricTotalSessions');
+      const metricAppsCount = document.getElementById('metricAppsCount');
+      const metricActiveApp = document.getElementById('metricActiveApp');
+
+      const tabByApp = document.getElementById('tabByApp');
+      const tabByDate = document.getElementById('tabByDate');
+      const tabRaw = document.getElementById('tabRaw');
+      const filterDateSelect = document.getElementById('filterDateSelect');
+      const filterAppSelect = document.getElementById('filterAppSelect');
+      const btnExportCsv = document.getElementById('btnExportCsv');
+      const btnClearLog = document.getElementById('btnClearLog');
+
+      // Dynamic LAN Auto-Discovery & Multi-Station State
+      const currentHost = window.location.hostname;
+      let stations = [];
+      const activeClients = {};
+      let hostWs = null;
+      let hostWsConnected = false;
+      const relayCallbacks = {};
+      const relayStatusCallbacks = {};
+      const pendingHostSignaling = [];
+
+      // Shared Audio Context for Push-to-Talk (PTT)
+      let pttAudioContext = null;
+      let pttMediaStream = null;
+      let pttProcessor = null;
+      let activePttTarget = null; // 'all' or station ID
+
+      function getStationKey(st) {
+        return (st && st.ip) ? st.ip.replace(/[^a-zA-Z0-9]/g, '_') : (st && st.id ? String(st.id) : 'host');
+      }
+
+      function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+      }
+
+      // Initialize Primary Host WebSocket for Signaling & Multi-Station Relay Tunneling
+      function initHostWebSocket() {
+        if (hostWs && (hostWs.readyState === WebSocket.OPEN || hostWs.readyState === WebSocket.CONNECTING)) {
+          return;
+        }
+
+        try {
+          hostWs = new WebSocket(`${wsProto}//${currentHost}:${wsPort}/`);
+          hostWs.binaryType = 'arraybuffer';
+
+          hostWs.onopen = () => {
+            hostWsConnected = true;
+            console.log('[QuestCast Hub] Host WebSocket connected to', currentHost);
+            const hostKey = currentHost.replace(/[^a-zA-Z0-9]/g, '_');
+            const selfClient = activeClients[hostKey];
+            if (!selfClient || !selfClient.isConnected) {
+              hostWs.send(JSON.stringify({ type: 'request_offer' }));
+            }
+            // Re-open relay tunnels for any remote stations currently on the grid
+            stations.forEach(st => {
+              if (!st.isSelf && st.ip !== currentHost) {
+                requestRelayTunnel(st);
+              }
+            });
+          };
+
+          hostWs.onmessage = async (e) => {
+            try {
+              if (typeof e.data === 'string') {
+                const msg = JSON.parse(e.data);
+                if (msg.type === 'relay_message') {
+                  const cb = relayCallbacks[msg.channelId];
+                  if (cb) cb(msg.data);
+                } else if (msg.type === 'relay_status') {
+                  const scb = relayStatusCallbacks[msg.channelId];
+                  if (scb) scb(msg.status);
+                } else {
+                  // Direct message for host station
+                  const hostKey = currentHost.replace(/[^a-zA-Z0-9]/g, '_');
+                  const selfClient = activeClients[hostKey] || Object.values(activeClients).find(c => c.isSelf);
+                  if (selfClient && selfClient.onSignaling) {
+                    selfClient.onSignaling(msg);
+                  } else {
+                    pendingHostSignaling.push(msg);
+                  }
+                }
+              }
+            } catch (err) {
+              console.error('[QuestCast Hub] WebSocket message parse error:', err);
+            }
+          };
+
+          hostWs.onclose = () => {
+            hostWsConnected = false;
+            setTimeout(initHostWebSocket, 2000);
+          };
+
+          hostWs.onerror = () => {
+            hostWsConnected = false;
+          };
+        } catch (_) {
+          setTimeout(initHostWebSocket, 2500);
+        }
+      }
+
+      function requestRelayTunnel(st) {
+        if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+          hostWs.send(JSON.stringify({
+            type: 'relay_connect',
+            channelId: String(st.ip),
+            targetIp: st.ip,
+            targetPort: st.wsPort || 8088
+          }));
+        }
+      }
+
+      function sendToStation(st, rawString) {
+        const stKey = getStationKey(st);
+        const client = activeClients[stKey];
+        if (client && client.directWs && client.directWs.readyState === WebSocket.OPEN) {
+          client.directWs.send(rawString);
+          return;
+        }
+        if (st.isSelf || st.ip === currentHost) {
+          if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+            hostWs.send(rawString);
+          }
+        } else {
+          if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+            hostWs.send(JSON.stringify({
+              type: 'relay_send',
+              channelId: String(st.ip),
+              data: rawString
+            }));
+          }
+        }
+      }
+
+      // LAN Auto-Discovery Engine
+      async function autoDiscoverStations() {
+        try {
+          const res = await fetch('/api/stations', { signal: AbortSignal.timeout(2500) });
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+              syncStationsWithDiscovered(data);
+              return;
+            }
+          }
+        } catch (_) {}
+
+        // Fallback: If network /api/stations not yet ready, ensure host is rendered
+        if (stations.length === 0) {
+          syncStationsWithDiscovered([{
+            id: 'host',
+            name: `Quest 2 (${currentHost})`,
+            ip: currentHost,
+            isSelf: true,
+            httpPort: 8080,
+            httpsPort: 8443,
+            wsPort: 8088,
+            wssPort: 8089,
+            currentGame: 'Standby'
+          }]);
+        }
+      }
+
+      function syncStationsWithDiscovered(discoveredList) {
+        // Build stable map of IPs
+        const newIps = discoveredList.map(s => s.ip).sort().join('|');
+        const currentIps = stations.map(s => s.ip).sort().join('|');
+
+        // Always update live metadata (current game, battery, name) without destroying video elements
+        discoveredList.forEach(st => {
+          const stKey = getStationKey(st);
+          const gameLabel = document.getElementById(`game_${stKey}`);
+          if (gameLabel && st.currentGame) {
+            gameLabel.textContent = st.currentGame;
+          }
+          const nameSpan = document.getElementById(`name_${stKey}`);
+          if (nameSpan && st.name) {
+            nameSpan.textContent = st.name;
+          }
+        });
+
+        if (newIps !== currentIps || stations.length === 0) {
+          console.log('[QuestCast Hub] Active stations changed:', discoveredList);
+          stations = discoveredList;
+          renderGrid();
+        }
+      }
+
+      async function startIntercom(target) {
+        if (activePttTarget) return;
+
+        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+          const httpsUrl = `https://${window.location.hostname}:8443${window.location.pathname}`;
+          const proceed = confirm(
+            'Push-to-Talk Intercom requires microphone permission.\n\n' +
+            'Option 1: Switch to secure HTTPS: ' + httpsUrl + '\n' +
+            '(Click Advanced -> Proceed to accept the headset certificate)\n\n' +
+            'Option 2 (HTTP): Enable chrome://flags/#unsafely-treat-insecure-origin-as-secure with this URL.\n\n' +
+            'Switch to HTTPS now?'
+          );
+          if (proceed) {
+            window.location.href = httpsUrl;
+          }
+          return;
+        }
+
+        try {
+          pttMediaStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+              channelCount: 1
+            }
+          });
+
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          pttAudioContext = new AudioCtx({ sampleRate: 16000 });
+          if (pttAudioContext.state === 'suspended') {
+            await pttAudioContext.resume();
+          }
+
+          const source = pttAudioContext.createMediaStreamSource(pttMediaStream);
+          pttProcessor = pttAudioContext.createScriptProcessor(2048, 1, 1);
+
+          pttProcessor.onaudioprocess = (e) => {
+            if (!activePttTarget) return;
+            const inputData = e.inputBuffer.getChannelData(0);
+            const pcm16 = new Int16Array(inputData.length);
+            for (let i = 0; i < inputData.length; i++) {
+              const s = Math.max(-1, Math.min(1, inputData[i]));
+              pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+
+            const pttAudioBase64 = arrayBufferToBase64(pcm16.buffer);
+            const audioMsg = JSON.stringify({
+              type: 'ptt_audio',
+              data: pttAudioBase64,
+              audioBase64: pttAudioBase64
+            });
+
+            if (activePttTarget === 'all') {
+              // Send binary directly to hostWs (host plays locally AND broadcasts to all station relays)
+              if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+                try { hostWs.send(pcm16.buffer); } catch (_) {}
+              }
+              // Also send to direct WebSockets if active in HTTP mode
+              Object.values(activeClients).forEach(c => {
+                if (!c.isSelf && c.directWs && c.directWs.readyState === WebSocket.OPEN) {
+                  try { c.directWs.send(pcm16.buffer); } catch (_) {}
+                }
+              });
+            } else {
+              const targetClient = activeClients[activePttTarget];
+              if (targetClient) {
+                if (targetClient.directWs && targetClient.directWs.readyState === WebSocket.OPEN) {
+                  try { targetClient.directWs.send(pcm16.buffer); } catch (_) {}
+                } else if (targetClient.isSelf) {
+                  if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+                    try { hostWs.send(pcm16.buffer); } catch (_) {}
+                  }
+                } else {
+                  sendToStation(targetClient.station, audioMsg);
+                }
+              }
+            }
+          };
+
+          source.connect(pttProcessor);
+          pttProcessor.connect(pttAudioContext.destination);
+
+          activePttTarget = target;
+
+          // Notify start
+          if (target === 'all') {
+            Object.values(activeClients).forEach(c => {
+              sendToStation(c.station, JSON.stringify({ type: 'ptt_start' }));
+            });
+            btnBroadcastPtt.classList.add('ptt-active');
+            broadcastPttText.textContent = 'TALKING TO ALL...';
+          } else {
+            const targetClient = activeClients[target];
+            if (targetClient) {
+              sendToStation(targetClient.station, JSON.stringify({ type: 'ptt_start' }));
+            }
+            const tileBtn = document.getElementById(`ptt_btn_${target}`);
+            if (tileBtn) {
+              tileBtn.classList.add('ptt-active');
+              tileBtn.textContent = 'TALKING...';
+            }
+          }
+        } catch (err) {
+          console.error('[QuestCast PTT] Microphone permission error:', err);
+          alert('Microphone access is required for Push-to-Talk intercom.');
+          stopIntercom();
+        }
+      }
+
+      function stopIntercom() {
+        if (!activePttTarget) return;
+        const target = activePttTarget;
+        activePttTarget = null;
+
+        if (target === 'all') {
+          Object.values(activeClients).forEach(c => {
+            sendToStation(c.station, JSON.stringify({ type: 'ptt_stop' }));
+          });
+          btnBroadcastPtt.classList.remove('ptt-active');
+          broadcastPttText.textContent = 'Broadcast PTT (All)';
+        } else {
+          const targetClient = activeClients[target];
+          if (targetClient) {
+            sendToStation(targetClient.station, JSON.stringify({ type: 'ptt_stop' }));
+          }
+          const tileBtn = document.getElementById(`ptt_btn_${target}`);
+          if (tileBtn) {
+            tileBtn.classList.remove('ptt-active');
+            tileBtn.textContent = 'Talk';
+          }
+        }
+
+        if (pttProcessor) {
+          try { pttProcessor.disconnect(); } catch (_) {}
+          pttProcessor = null;
+        }
+        if (pttMediaStream) {
+          try { pttMediaStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+          pttMediaStream = null;
+        }
+        if (pttAudioContext) {
+          try { pttAudioContext.close(); } catch (_) {}
+          pttAudioContext = null;
+        }
+      }
+
+      // Broadcast PTT Bindings
+      btnBroadcastPtt.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        startIntercom('all');
+      });
+      btnBroadcastPtt.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        startIntercom('all');
+      }, { passive: false });
+
+      window.addEventListener('mouseup', () => {
+        if (activePttTarget) stopIntercom();
+      });
+      window.addEventListener('touchend', () => {
+        if (activePttTarget) stopIntercom();
+      });
+
+      function renderGrid() {
+        gridContainer.innerHTML = '';
+        const count = Math.min(4, Math.max(1, stations.length));
+        gridContainer.className = `grid-container stations-${count}`;
+
+        stations.forEach((st, idx) => {
+          const stKey = getStationKey(st);
+          const tile = document.createElement('div');
+          tile.className = 'station-tile';
+          tile.id = `tile_${stKey}`;
+
+          const isHost = st.isSelf || st.ip === currentHost;
+          const hostBadge = isHost ? '<span style="font-size:0.65rem; background:rgba(0,229,255,0.15); color:var(--accent-cyan); padding:1px 6px; border-radius:999px; font-weight:700;">HOST</span>' : '<span style="font-size:0.65rem; background:rgba(16,185,129,0.15); color:var(--accent-green); padding:1px 6px; border-radius:999px; font-weight:700;">AUTO</span>';
+
+          tile.innerHTML = `
+            <div class="station-header">
+              <div class="station-title">
+                <div class="status-dot" id="dot_${stKey}"></div>
+                <span id="name_${stKey}">${st.name || ('Station ' + (idx + 1))}</span>
+                ${hostBadge}
+              </div>
+              <div class="station-meta">
+                <span id="game_${stKey}">${st.currentGame || 'Standby'}</span>
+                <button class="tile-ptt-btn" id="ptt_btn_${stKey}" title="Hold to speak to ${st.name} player (${st.ip})">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                  </svg>
+                  <span>Talk</span>
+                </button>
+                <button class="btn" style="padding:2px 8px; font-size:0.75rem;" onclick="window.maximizeStation('${stKey}')">Expand</button>
+              </div>
+            </div>
+            <div class="video-viewport" onclick="window.maximizeStation('${stKey}')">
+              <video id="video_${stKey}" autoplay playsinline muted></video>
+              <div class="tile-overlay" id="overlay_${stKey}">
+                <div>Waiting for ${st.name}</div>
+                <div style="font-size:0.75rem; margin-top:4px; color:var(--accent-cyan);">${st.ip}</div>
+              </div>
+              <button class="floating-close-btn hidden" id="close_${stKey}" onclick="event.stopPropagation(); window.restoreGrid('${stKey}')">
+                &times; Exit Fullscreen
+              </button>
+            </div>
+          `;
+          gridContainer.appendChild(tile);
+
+          // Bind PTT for this specific station
+          const tilePttBtn = tile.querySelector(`#ptt_btn_${stKey}`);
+          tilePttBtn.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            startIntercom(stKey);
+          });
+          tilePttBtn.addEventListener('touchstart', (e) => {
+            e.stopPropagation();
+            startIntercom(stKey);
+          }, { passive: false });
+
+          connectStation(st);
+        });
+      }
+
+      function connectStation(st) {
+        const stKey = getStationKey(st);
+        if (activeClients[stKey]) {
+          try { activeClients[stKey].pc?.close(); } catch (_) {}
+          try { activeClients[stKey].directWs?.close(); } catch (_) {}
+        }
+
+        const video = document.getElementById(`video_${stKey}`);
+        const dot = document.getElementById(`dot_${stKey}`);
+        const overlay = document.getElementById(`overlay_${stKey}`);
+        const gameLabel = document.getElementById(`game_${stKey}`);
+
+        let pc = null;
+        let pendingCandidates = [];
+        let isConnected = false;
+        let directWs = null;
+        let hasReceivedOffer = false;
+
+        function initPC() {
+          if (pc) try { pc.close(); } catch (_) {}
+          pc = new RTCPeerConnection({
+            iceServers: [],
+            bundlePolicy: 'max-bundle',
+            rtcpMuxPolicy: 'require'
+          });
+
+          pc.onicecandidate = (e) => {
+            if (e.candidate) {
+              const iceMsg = JSON.stringify({ type: 'ice', candidate: e.candidate.toJSON() });
+              sendToStation(st, iceMsg);
+            }
+          };
+
+          pc.ontrack = (e) => {
+            if (e.streams && e.streams[0]) {
+              video.srcObject = e.streams[0];
+            } else {
+              const stream = new MediaStream();
+              stream.addTrack(e.track);
+              video.srcObject = stream;
+            }
+            video.play().catch(() => {});
+            if (overlay) overlay.classList.add('hidden');
+            if (dot) dot.className = 'status-dot online';
+            isConnected = true;
+          };
+
+          pc.oniceconnectionstatechange = () => {
+            if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+              if (dot) dot.className = 'status-dot online';
+              if (overlay) overlay.classList.add('hidden');
+              video.play().catch(() => {});
+              isConnected = true;
+            }
+          };
+
+          pc.onconnectionstatechange = () => {
+            if (pc.connectionState === 'connected') {
+              if (dot) dot.className = 'status-dot online';
+              if (overlay) overlay.classList.add('hidden');
+              video.play().catch(() => {});
+              isConnected = true;
+            } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+              if (dot) dot.className = 'status-dot';
+              if (overlay) overlay.classList.remove('hidden');
+            }
+          };
+        }
+
+        async function handleSignaling(rawPayload) {
+          try {
+            const msg = (typeof rawPayload === 'string') ? JSON.parse(rawPayload) : rawPayload;
+            const type = (msg.type || msg.kind || '').toLowerCase();
+            if (type === 'offer') {
+              hasReceivedOffer = true;
+              initPC();
+              await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: msg.sdp }));
+              while (pendingCandidates.length > 0) {
+                const cand = pendingCandidates.shift();
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(cand));
+                } catch (e) {
+                  console.warn('[QuestCast Hub] Candidate skipped:', e);
+                }
+              }
+              const answer = await pc.createAnswer();
+              await pc.setLocalDescription(answer);
+              sendToStation(st, JSON.stringify({ type: 'answer', sdp: pc.localDescription.sdp }));
+            } else if (type === 'ice') {
+              if (pc && pc.remoteDescription) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                } catch (e) {
+                  console.warn('[QuestCast Hub] ICE add failed for ' + st.ip, e);
+                }
+              } else {
+                pendingCandidates.push(msg.candidate);
+              }
+            }
+          } catch (err) {
+            console.error('[Signaling Error ' + st.ip + ']', err);
+          }
+        }
+
+        function setupRelayTunnel() {
+          if (dot) dot.className = 'status-dot connecting';
+
+          relayCallbacks[st.ip] = (data) => {
+            handleSignaling(data);
+          };
+
+          relayStatusCallbacks[st.ip] = (status) => {
+            if (status === 'connected') {
+              if (dot) dot.className = 'status-dot connecting';
+            } else if (status === 'disconnected' || status === 'error') {
+              if (dot) dot.className = 'status-dot';
+              if (overlay) overlay.classList.remove('hidden');
+            }
+          };
+
+          function sendRelayConnect() {
+            if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+              requestRelayTunnel(st);
+            } else {
+              setTimeout(sendRelayConnect, 800);
+            }
+          }
+          sendRelayConnect();
+        }
+
+        const isHost = st.isSelf || st.ip === currentHost;
+
+        if (!isHttps) {
+          // DIRECT WEBSOCKET MODE: On plain HTTP, connect directly to each headset!
+          try {
+            const targetPort = st.wsPort || 8088;
+            directWs = new WebSocket(`ws://${st.ip}:${targetPort}/`);
+            directWs.binaryType = 'arraybuffer';
+
+            directWs.onopen = () => {
+              if (dot) dot.className = 'status-dot connecting';
+              console.log('[QuestCast Hub] Direct WebSocket open to', st.ip);
+            };
+
+            directWs.onmessage = (e) => {
+              if (typeof e.data === 'string') {
+                handleSignaling(e.data);
+              }
+            };
+
+            directWs.onclose = () => {
+              if (dot) dot.className = 'status-dot';
+              if (overlay) overlay.classList.remove('hidden');
+            };
+
+            directWs.onerror = () => {
+              console.warn('[QuestCast Hub] Direct WS to ' + st.ip + ' failed, using host relay fallback...');
+              if (!isHost) setupRelayTunnel();
+            };
+          } catch (e) {
+            console.warn('[QuestCast Hub] Direct WS exception, using host relay', e);
+            if (!isHost) setupRelayTunnel();
+          }
+        } else {
+          // HTTPS MODE: Local headset via hostWs, remote headsets via hostWs relay tunnel
+          if (isHost) {
+            if (dot) dot.className = 'status-dot connecting';
+            while (pendingHostSignaling.length > 0) {
+              handleSignaling(pendingHostSignaling.shift());
+            }
+            if (hostWs && hostWs.readyState === WebSocket.OPEN) {
+              hostWs.send(JSON.stringify({ type: 'request_offer' }));
+            }
+          } else {
+            setupRelayTunnel();
+          }
+        }
+
+        // Offer watchdog: If no offer received within 3.5s, request one
+        setTimeout(() => {
+          if (!hasReceivedOffer) {
+            console.log('[QuestCast Hub] Requesting offer watchdog for', st.ip);
+            sendToStation(st, JSON.stringify({ type: 'request_offer' }));
+          }
+        }, 3500);
+
+        activeClients[stKey] = {
+          station: st,
+          isSelf: isHost,
+          ip: st.ip,
+          directWs: directWs,
+          onSignaling: handleSignaling,
+          get isConnected() { return isConnected; }
+        };
+      }
+
+
+      window.maximizeStation = function (id) {
+        document.querySelectorAll('.station-tile').forEach(t => t.classList.remove('maximized'));
+        document.querySelectorAll('.floating-close-btn').forEach(b => b.classList.add('hidden'));
+
+        const tile = document.getElementById(`tile_${id}`);
+        const closeBtn = document.getElementById(`close_${id}`);
+        if (tile && closeBtn) {
+          tile.classList.add('maximized');
+          closeBtn.classList.remove('hidden');
+        }
+      };
+
+      window.restoreGrid = function (id) {
+        const tile = document.getElementById(`tile_${id}`);
+        const closeBtn = document.getElementById(`close_${id}`);
+        if (tile) tile.classList.remove('maximized');
+        if (closeBtn) closeBtn.classList.add('hidden');
+      };
+
+      // Modal management
+      btnManageStations.addEventListener('click', () => {
+        stationList.innerHTML = '';
+        stations.forEach((st, idx) => {
+          const row = document.createElement('div');
+          row.className = 'station-row';
+          row.innerHTML = `
+            <input type="text" class="name-input" value="${st.name}" placeholder="Station Name" id="name_${idx}">
+            <input type="text" class="ip-input" value="${st.ip}" placeholder="Headset IP Address" id="ip_${idx}">
+            <button class="del-btn" onclick="this.parentElement.remove()">&times;</button>
+          `;
+          stationList.appendChild(row);
+        });
+        modalStations.classList.remove('hidden');
+      });
+
+      btnCloseModal.addEventListener('click', () => modalStations.classList.add('hidden'));
+
+      btnAddStation.addEventListener('click', () => {
+        const idx = stationList.children.length;
+        const row = document.createElement('div');
+        row.className = 'station-row';
+        row.innerHTML = `
+          <input type="text" class="name-input" value="Station ${idx + 1}" placeholder="Station Name" id="name_${idx}">
+          <input type="text" class="ip-input" value="" placeholder="Headset IP Address (e.g. 192.168.x.x)" id="ip_${idx}">
+          <button class="del-btn" onclick="this.parentElement.remove()">&times;</button>
+        `;
+        stationList.appendChild(row);
+      });
+
+      btnSaveStations.addEventListener('click', () => {
+        const newStations = [];
+        Array.from(stationList.children).forEach((row, i) => {
+          const nameInput = row.querySelector('.name-input');
+          const ipInput = row.querySelector('.ip-input');
+          if (nameInput && ipInput && ipInput.value.trim()) {
+            newStations.push({
+              id: i + 1,
+              name: nameInput.value.trim() || `Station ${i + 1}`,
+              ip: ipInput.value.trim()
+            });
+          }
+        });
+        if (newStations.length > 0) {
+          stations = newStations;
+          localStorage.setItem('questcast_stations', JSON.stringify(stations));
+          modalStations.classList.add('hidden');
+          renderGrid();
+        }
+      });
+
+      // --- App-Based & Date-Based Audit Log Engine ---
+      let activeAuditView = 'app';
+      let cachedAuditData = null;
+
+      async function fetchStationAuditLog() {
+        const selectedIp = auditStationSelect.value || currentHost;
+        auditLogContent.innerHTML = `<p style="color:var(--text-dim); text-align:center; padding:20px;">Fetching records from ${selectedIp}...</p>`;
+
+        const date = filterDateSelect.value;
+        const app = filterAppSelect.value;
+        let url = `${httpProto}//${selectedIp}:${httpPort}/api/audit-log?view=full`;
+        if (date) url += `&date=${encodeURIComponent(date)}`;
+        if (app) url += `&app=${encodeURIComponent(app)}`;
+
+        try {
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          cachedAuditData = data;
+
+          if (data.summary) {
+            metricTotalTime.textContent = data.summary.totalDurationFormatted || '0m';
+            metricTotalSessions.textContent = data.summary.totalSessions || 0;
+            metricAppsCount.textContent = data.summary.totalAppsCount || 0;
+            metricActiveApp.textContent = data.summary.activeApp ? `${data.summary.activeApp} (${data.summary.activeDuration})` : 'Standby';
+          }
+
+          if (filterDateSelect.options.length <= 1 && data.availableDates) {
+            data.availableDates.forEach(d => {
+              const opt = document.createElement('option');
+              opt.value = d;
+              opt.textContent = d;
+              filterDateSelect.appendChild(opt);
+            });
+          }
+
+          if (filterAppSelect.options.length <= 1 && data.availableApps) {
+            data.availableApps.forEach(a => {
+              const opt = document.createElement('option');
+              opt.value = a;
+              opt.textContent = a;
+              filterAppSelect.appendChild(opt);
+            });
+          }
+
+          renderAudit();
+        } catch (e) {
+          auditLogContent.innerHTML = `<p style="color:var(--accent-red); text-align:center; padding:20px;">Failed to load audit records from ${selectedIp}: ${e.message}</p>`;
+        }
+      }
+
+      function renderAudit() {
+        if (!cachedAuditData) return;
+        if (activeAuditView === 'app') {
+          renderByApp(cachedAuditData.byApp || []);
+        } else if (activeAuditView === 'date') {
+          renderByDate(cachedAuditData.byDate || []);
+        } else {
+          renderRaw(cachedAuditData.sessions || []);
+        }
+      }
+
+      function renderByApp(byApp) {
+        if (byApp.length === 0) {
+          auditLogContent.innerHTML = '<p style="color:var(--text-dim); text-align:center; padding:20px;">No app records logged yet.</p>';
+          return;
+        }
+
+        let html = '<table class="audit-table"><thead><tr><th>Game / Application</th><th>Total Play Time</th><th>Sessions</th><th>Dates Active</th><th>First Played</th><th>Last Played</th></tr></thead><tbody>';
+        byApp.forEach(item => {
+          html += `<tr>
+            <td style="font-weight:700; color:var(--text-main);">
+              <div>${escapeHtml(item.appName)}</div>
+              <div style="font-size:0.7rem; color:var(--text-dim); font-family:monospace;">${escapeHtml(item.packageName)}</div>
+            </td>
+            <td><span class="duration-tag">${item.totalDurationFormatted}</span></td>
+            <td><strong>${item.totalSessions}</strong></td>
+            <td style="color:var(--accent-amber); font-family:monospace;">${(item.datesPlayed || []).join(', ')}</td>
+            <td style="color:var(--text-dim); font-family:monospace;">${item.firstPlayed || '-'}</td>
+            <td style="color:var(--text-dim); font-family:monospace;">${item.lastPlayed || '-'}</td>
+          </tr>`;
+        });
+        html += '</tbody></table>';
+        auditLogContent.innerHTML = html;
+      }
+
+      function renderByDate(byDate) {
+        if (byDate.length === 0) {
+          auditLogContent.innerHTML = '<p style="color:var(--text-dim); text-align:center; padding:20px;">No date records logged yet.</p>';
+          return;
+        }
+
+        let html = '';
+        byDate.forEach(day => {
+          html += `
+            <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:8px; margin-bottom:12px; padding:12px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <div style="font-size:0.95rem; font-weight:700; color:var(--accent-amber);">Date: ${day.date}</div>
+                <div style="font-size:0.8rem;">
+                  Total: <strong class="duration-tag">${day.totalDurationFormatted}</strong> &bull; Sessions: <strong>${day.totalSessions}</strong>
+                </div>
+              </div>
+              <div style="font-size:0.75rem; color:var(--text-dim); margin-bottom:6px;">
+                Games: <strong style="color:var(--text-main);">${(day.appsPlayed || []).join(', ')}</strong>
+              </div>
+              <table class="audit-table">
+                <thead><tr><th>Game</th><th>Start</th><th>End</th><th>Duration</th><th>Status</th></tr></thead>
+                <tbody>
+          `;
+          (day.sessions || []).forEach(s => {
+            html += `<tr>
+              <td style="color:var(--accent-cyan); font-weight:600;">${escapeHtml(s.appName)}</td>
+              <td>${s.formattedStartTime}</td>
+              <td>${s.formattedEndTime}</td>
+              <td><span class="duration-tag">${s.formattedDuration}</span></td>
+              <td>${s.isActive ? '<span style="color:var(--accent-green); font-weight:700;">Active</span>' : 'Ended'}</td>
+            </tr>`;
+          });
+          html += '</tbody></table></div>';
+        });
+        auditLogContent.innerHTML = html;
+      }
+
+      function renderRaw(sessions) {
+        if (sessions.length === 0) {
+          auditLogContent.innerHTML = '<p style="color:var(--text-dim); text-align:center; padding:20px;">No sessions found matching current filter.</p>';
+          return;
+        }
+        let html = '<table class="audit-table"><thead><tr><th>Date</th><th>Game Name</th><th>Start</th><th>End</th><th>Duration</th><th>Status</th></tr></thead><tbody>';
+        sessions.forEach(s => {
+          html += `<tr>
+            <td style="color:var(--accent-amber); font-family:monospace;">${s.date}</td>
+            <td style="font-weight:600; color:var(--text-main);">${escapeHtml(s.appName)}</td>
+            <td style="font-family:monospace;">${s.formattedStartTime}</td>
+            <td style="font-family:monospace;">${s.formattedEndTime}</td>
+            <td><span class="duration-tag">${s.formattedDuration}</span></td>
+            <td>${s.isActive ? '<span style="color:var(--accent-green); font-weight:700;">Active</span>' : 'Ended'}</td>
+          </tr>`;
+        });
+        html += '</tbody></table>';
+        auditLogContent.innerHTML = html;
+      }
+
+      function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+
+      tabByApp.addEventListener('click', () => {
+        activeAuditView = 'app';
+        tabByApp.classList.add('active');
+        tabByDate.classList.remove('active');
+        tabRaw.classList.remove('active');
+        renderAudit();
+      });
+
+      tabByDate.addEventListener('click', () => {
+        activeAuditView = 'date';
+        tabByDate.classList.add('active');
+        tabByApp.classList.remove('active');
+        tabRaw.classList.remove('active');
+        renderAudit();
+      });
+
+      tabRaw.addEventListener('click', () => {
+        activeAuditView = 'raw';
+        tabRaw.classList.add('active');
+        tabByApp.classList.remove('active');
+        tabByDate.classList.remove('active');
+        renderAudit();
+      });
+
+      filterDateSelect.addEventListener('change', fetchStationAuditLog);
+      filterAppSelect.addEventListener('change', fetchStationAuditLog);
+      auditStationSelect.addEventListener('change', fetchStationAuditLog);
+
+      btnExportCsv.addEventListener('click', () => {
+        const ip = auditStationSelect.value || currentHost;
+        const date = filterDateSelect.value;
+        const app = filterAppSelect.value;
+        let url = `${httpProto}//${ip}:${httpPort}/api/audit-log/export.csv?`;
+        if (date) url += `date=${encodeURIComponent(date)}&`;
+        if (app) url += `app=${encodeURIComponent(app)}&`;
+        window.location.href = url;
+      });
+
+      btnClearLog.addEventListener('click', async () => {
+        const ip = auditStationSelect.value || currentHost;
+        if (!confirm(`Are you sure you want to clear audit logs on headset ${ip}?`)) return;
+        try {
+          const res = await fetch(`${httpProto}//${ip}:${httpPort}/api/audit-log/clear`, { method: 'POST' });
+          if (res.ok) {
+            alert('Audit log cleared.');
+            fetchStationAuditLog();
+          }
+        } catch (e) {
+          alert('Failed to clear: ' + e.message);
+        }
+      });
+
+      btnAuditLog.addEventListener('click', () => {
+        // Populate station dropdown
+        auditStationSelect.innerHTML = '';
+        stations.forEach(st => {
+          const opt = document.createElement('option');
+          opt.value = st.ip;
+          opt.textContent = `${st.name} (${st.ip})`;
+          auditStationSelect.appendChild(opt);
+        });
+        modalAuditLog.classList.remove('hidden');
+        fetchStationAuditLog();
+      });
+
+      btnCloseAuditModal.addEventListener('click', () => modalAuditLog.classList.add('hidden'));
+
+      // Initial Startup: Immediately render Host station on grid, connect WebSocket & start LAN Auto-Discovery
+      stations = [{
+        id: 'host',
+        name: `Quest 2 (${currentHost})`,
+        ip: currentHost,
+        isSelf: true,
+        httpPort: 8080,
+        httpsPort: 8443,
+        wsPort: 8088,
+        wssPort: 8089,
+        currentGame: 'Standby'
+      }];
+      renderGrid();
+
+      initHostWebSocket();
+      autoDiscoverStations();
+      setInterval(autoDiscoverStations, 3000);
+    })();
+  </script>
+</body>
+</html>
