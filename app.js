@@ -1,18 +1,20 @@
 /**
  * QuestCast Operator Hub - Native WebRTC Dynamic Multi-Peer PWA
- * Shows ONLY connected headsets in a responsive live grid.
- * Zero laptop required. 100% Offline-capable.
+ * Auto-Discovers, Auto-Connects, and Streams Meta Quest Headsets.
+ * Dynamically clears sleeping headsets and auto-wakes them.
+ * Zero hardcoded IPs. Zero laptop required. 100% Offline-capable.
  */
 
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'questcast_saved_ips_v2';
-  const DEFAULT_IPS = ['192.168.0.232', '192.168.0.168'];
+  const STORAGE_KEY = 'questcast_saved_ips_v3';
+  const DEFAULT_IPS = []; // Zero hardcoded IPs!
 
   // Application State
   let savedIps = loadSavedIps();
-  const activeStations = new Map(); // ip -> { ip, name, ws, pc, cardEl, videoEl, statsInterval, reconnectTimer, lastBytes, lastTs }
+  const activeStations = new Map(); // ip -> StationObject
+  let isScanning = false;
   let activePttTarget = null; // null | 'broadcast' | ip
   let pttAudioContext = null;
   let pttMediaStream = null;
@@ -28,11 +30,19 @@
   // DOM Elements
   const stationsGrid = document.getElementById('stationsGrid');
   const standbyHero = document.getElementById('standbyHero');
+  const standbyTitle = document.getElementById('standbyTitle');
+  const standbySubtitle = document.getElementById('standbySubtitle');
   const activePill = document.getElementById('activePill');
   const statusBadge = document.getElementById('statusBadge');
   const savedIpsList = document.getElementById('savedIpsList');
+  const sleepingDevicesContainer = document.getElementById('sleepingDevicesContainer');
+  const sleepingList = document.getElementById('sleepingList');
   const quickAddIp = document.getElementById('quickAddIp');
   const btnQuickAdd = document.getElementById('btnQuickAdd');
+  const btnScanNetwork = document.getElementById('btnScanNetwork');
+  const btnScanHero = document.getElementById('btnScanHero');
+  const scanProgressBanner = document.getElementById('scanProgressBanner');
+  const scanStatusText = document.getElementById('scanStatusText');
   const broadcastBar = document.getElementById('broadcastBar');
   const btnBroadcastPtt = document.getElementById('btnBroadcastPtt');
   const btnWakeLock = document.getElementById('btnWakeLock');
@@ -45,26 +55,69 @@
   const inputStationName = document.getElementById('inputStationName');
   const sslLinks = document.getElementById('sslLinks');
   const offlineBanner = document.getElementById('offlineBanner');
+  const toastContainer = document.getElementById('toastContainer');
 
   // --- Initialize Hub ---
   function init() {
     registerServiceWorker();
     setupNetworkStatus();
     setupGlobalEvents();
+
+    // Check URL parameters for auto-connect (e.g. ?ip=192.168.0.232)
+    processUrlParams();
+
+    // If served directly from a headset, auto-add its IP
+    checkSelfHost();
+
     renderStandbyIps();
     updateGridVisibility();
     autoRequestWakeLock();
     startMonitoringAllIps();
+
+    // If no saved IPs exist, automatically trigger a Wi-Fi scan after 1 second!
+    if (savedIps.length === 0) {
+      setTimeout(() => {
+        triggerSubnetScan();
+      }, 1000);
+    }
   }
 
-  // --- Service Worker ---
+  // --- Auto-detect IP from URL params or Hostname ---
+  function processUrlParams() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const queryIp = params.get('ip') || params.get('connect');
+      if (queryIp) {
+        const ips = queryIp.split(',').map((s) => s.trim()).filter(Boolean);
+        ips.forEach((ip) => {
+          if (!savedIps.includes(ip)) {
+            savedIps.push(ip);
+          }
+        });
+        saveIps();
+      }
+    } catch (_) {}
+  }
+
+  function checkSelfHost() {
+    const host = window.location.hostname;
+    // Check if host is a valid IPv4 address
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host) && host !== '127.0.0.1') {
+      if (!savedIps.includes(host)) {
+        savedIps.unshift(host);
+        saveIps();
+      }
+    }
+  }
+
+  // --- Service Worker & PWA Caching ---
   function registerServiceWorker() {
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker
           .register('./sw.js')
           .then((reg) => {
-            console.log('[QuestCast Hub] ServiceWorker active:', reg.scope);
+            console.log('[QuestCast Hub] ServiceWorker registered with scope:', reg.scope);
           })
           .catch((err) => {
             console.warn('[QuestCast Hub] SW register error:', err);
@@ -100,10 +153,11 @@
 
   function addIp(rawIp, optionalName) {
     const ip = rawIp.trim();
-    if (!ip) return;
+    if (!ip || !/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) return;
     if (!savedIps.includes(ip)) {
-      savedIps.unshift(ip);
+      savedIps.push(ip);
       saveIps();
+      showToast(`Added Headset: ${ip}`);
     }
     connectToHeadset(ip, optionalName);
   }
@@ -113,6 +167,7 @@
     savedIps = savedIps.filter((item) => item !== ip);
     saveIps();
     updateGridVisibility();
+    showToast(`Removed Headset: ${ip}`);
   }
 
   // --- Connection Engine per Headset ---
@@ -123,7 +178,7 @@
   }
 
   function connectToHeadset(ip, customName) {
-    // If already streaming, don't restart
+    // If already actively connected & streaming, do not tear down
     const existing = activeStations.get(ip);
     if (existing && existing.ws && existing.ws.readyState === WebSocket.OPEN && existing.isStreaming) {
       return;
@@ -142,7 +197,10 @@
       reconnectTimer: null,
       lastBytes: 0,
       lastTs: 0,
+      consecutiveZeroFps: 0,
       isStreaming: false,
+      isSleeping: false,
+      sslNeeded: false,
       pendingCandidates: []
     };
     activeStations.set(ip, station);
@@ -155,7 +213,10 @@
       station.ws.binaryType = 'arraybuffer';
 
       station.ws.onopen = () => {
+        station.sslNeeded = false;
         updateStandbyIpStatus(ip, 'Signaling ready, waiting for video...');
+        // Query peer stations via LAN discovery table on this headset
+        queryPeerStations(ip);
       };
 
       station.ws.onmessage = async (event) => {
@@ -170,23 +231,28 @@
       };
 
       station.ws.onclose = () => {
-        updateStandbyIpStatus(ip, 'Offline');
+        updateStandbyIpStatus(ip, station.sslNeeded ? 'Needs SSL Authorization' : 'Offline');
         handleStationDisconnected(station);
       };
 
       station.ws.onerror = () => {
-        updateStandbyIpStatus(ip, 'Connection error');
+        // In HTTPS context, an immediate error usually indicates self-signed certificate untrusted
+        station.sslNeeded = true;
+        updateStandbyIpStatus(ip, 'Needs SSL Authorization');
       };
 
     } catch (err) {
       console.warn(`[QuestCast ${ip}] WebSocket init error:`, err);
-      updateStandbyIpStatus(ip, 'Cannot reach IP');
+      station.sslNeeded = true;
+      updateStandbyIpStatus(ip, 'Needs SSL Authorization');
       handleStationDisconnected(station);
     }
   }
 
   function handleStationDisconnected(station) {
     station.isStreaming = false;
+    station.isSleeping = false;
+    station.consecutiveZeroFps = 0;
     clearInterval(station.statsInterval);
 
     // Remove from the connected grid if present
@@ -203,7 +269,7 @@
 
     updateGridVisibility();
 
-    // Auto-reconnect in 4 seconds
+    // Auto-reconnect in 4 seconds if not marked as SSL-blocked
     clearTimeout(station.reconnectTimer);
     station.reconnectTimer = setTimeout(() => {
       connectToHeadset(station.ip, station.name);
@@ -231,6 +297,27 @@
     activeStations.delete(ip);
   }
 
+  // --- Query /api/stations to automatically find all LAN peers ---
+  async function queryPeerStations(ip) {
+    try {
+      const resp = await fetch(`${HTTP_PROTO}//${ip}:${HTTP_PORT}/api/stations`, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(2500)
+      });
+      if (resp.ok) {
+        const peers = await resp.json();
+        if (Array.isArray(peers)) {
+          peers.forEach((peer) => {
+            if (peer.ip && !savedIps.includes(peer.ip)) {
+              console.log(`[QuestCast Auto-Discovery] Found peer station via ${ip}:`, peer);
+              addIp(peer.ip, peer.name);
+            }
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
   // --- WebRTC Signaling & Media Flow ---
   async function handleSignalingMessage(station, msg) {
     const type = (msg.type || msg.kind || '').toLowerCase();
@@ -243,6 +330,14 @@
       if (station.ws && station.ws.readyState === WebSocket.OPEN) {
         station.ws.send(JSON.stringify({ type: 'pong' }));
       }
+    } else if (type === 'headset_sleep') {
+      // Proximity sensor off / screen sleep event from Android
+      console.log(`[QuestCast ${station.ip}] Received headset_sleep event from device`);
+      markStationSleeping(station, true);
+    } else if (type === 'headset_wake') {
+      // Headset put back on / screen wake event from Android
+      console.log(`[QuestCast ${station.ip}] Received headset_wake event from device`);
+      markStationSleeping(station, false);
     }
   }
 
@@ -269,6 +364,8 @@
     station.pc.ontrack = (event) => {
       console.log(`[QuestCast ${station.ip}] WebRTC video track received!`);
       station.isStreaming = true;
+      station.isSleeping = false;
+      station.consecutiveZeroFps = 0;
 
       // Ensure the card exists in the grid
       attachStationCardToGrid(station);
@@ -335,12 +432,15 @@
 
   // --- Dynamic Grid Card Management ---
   function attachStationCardToGrid(station) {
-    // If card already exists in DOM, keep it to avoid video interruption
-    if (station.cardEl && document.getElementById(`card_${station.ip.replace(/\./g, '_')}`)) {
+    const safeId = station.ip.replace(/\./g, '_');
+    const existing = document.getElementById(`card_${safeId}`);
+
+    if (existing) {
+      existing.style.display = '';
+      existing.classList.remove('sleeping');
       return;
     }
 
-    const safeId = station.ip.replace(/\./g, '_');
     const card = document.createElement('div');
     card.className = 'station-card';
     card.id = `card_${safeId}`;
@@ -398,10 +498,12 @@
     }
   }
 
+  // --- Real-time Stats & 0-FPS Sleeping Detection Engine ---
   function startStatsMonitoring(station) {
     clearInterval(station.statsInterval);
     station.lastBytes = 0;
     station.lastTs = 0;
+    station.consecutiveZeroFps = 0;
 
     const safeId = station.ip.replace(/\./g, '_');
 
@@ -413,29 +515,84 @@
 
       try {
         const stats = await station.pc.getStats();
+        let currentFps = 0;
+        let currentBytes = 0;
+        let foundVideo = false;
+
         stats.forEach((report) => {
           if (report.type === 'inbound-rtp' && report.kind === 'video') {
-            const fps = report.framesPerSecond !== undefined ? Math.round(report.framesPerSecond) : 0;
+            foundVideo = true;
+            currentFps = report.framesPerSecond !== undefined ? Math.round(report.framesPerSecond) : 0;
             const now = report.timestamp;
-            const bytes = report.bytesReceived || 0;
+            currentBytes = report.bytesReceived || 0;
             let kbps = 0;
             if (station.lastTs > 0 && now > station.lastTs) {
-              kbps = Math.round(((bytes - station.lastBytes) * 8) / (now - station.lastTs));
+              kbps = Math.round(((currentBytes - station.lastBytes) * 8) / (now - station.lastTs));
             }
-            station.lastBytes = bytes;
+
+            // Zero-FPS / Sleep Detection
+            if (currentFps === 0 && (currentBytes === station.lastBytes || currentBytes - station.lastBytes < 200)) {
+              station.consecutiveZeroFps++;
+            } else {
+              station.consecutiveZeroFps = 0;
+            }
+
+            station.lastBytes = currentBytes;
             station.lastTs = now;
 
             if (statsEl) {
-              const res = station.videoEl && station.videoEl.videoWidth > 0 ? `${station.videoEl.videoWidth}p` : '';
-              statsEl.textContent = `${fps} FPS • ${kbps > 1000 ? (kbps / 1000).toFixed(1) + 'M' : kbps + 'k'}${res ? ' • ' + res : ''}`;
+              if (station.isSleeping) {
+                statsEl.textContent = '💤 Standby (Sleeping)';
+              } else {
+                const res = station.videoEl && station.videoEl.videoWidth > 0 ? `${station.videoEl.videoWidth}p` : '';
+                statsEl.textContent = `${currentFps} FPS • ${kbps > 1000 ? (kbps / 1000).toFixed(1) + 'M' : kbps + 'k'}${res ? ' • ' + res : ''}`;
+              }
             }
           }
         });
+
+        // If FPS has been 0 for 3 consecutive checks (approx 4.5 seconds), mark headset as sleeping!
+        if (foundVideo && station.consecutiveZeroFps >= 3) {
+          if (!station.isSleeping) {
+            markStationSleeping(station, true);
+          }
+        } else if (foundVideo && currentFps > 0) {
+          if (station.isSleeping) {
+            markStationSleeping(station, false);
+          }
+        }
+
       } catch (_) {}
 
-      // Query battery every 10s safely via HTTPS if allowed
+      // Query battery every 10s safely via HTTPS
       pollDeviceInfo(station, battEl);
     }, 1500);
+  }
+
+  function markStationSleeping(station, sleeping) {
+    if (station.isSleeping === sleeping) return;
+    station.isSleeping = sleeping;
+    station.isStreaming = !sleeping;
+
+    console.log(`[QuestCast ${station.ip}] Headset state changed: sleeping=${sleeping}`);
+
+    if (sleeping) {
+      // Hide card from the active video grid so it doesn't leave a frozen black screen
+      if (station.cardEl) {
+        station.cardEl.style.display = 'none';
+        station.cardEl.classList.add('sleeping');
+      }
+    } else {
+      // Restore card to grid
+      if (station.cardEl) {
+        station.cardEl.style.display = '';
+        station.cardEl.classList.remove('sleeping');
+      } else {
+        attachStationCardToGrid(station);
+      }
+    }
+
+    updateGridVisibility();
   }
 
   async function pollDeviceInfo(station, battEl) {
@@ -454,15 +611,24 @@
     } catch (_) {}
   }
 
-  // --- Grid Visibility & Dynamic Layout Switcher ---
+  // --- Dynamic Grid Visibility & Standby Screen Manager ---
   function updateGridVisibility() {
     let streamingCount = 0;
+    let sleepingCount = 0;
+    const sleepingStations = [];
+
     activeStations.forEach((s) => {
-      if (s.isStreaming) streamingCount++;
+      if (s.isStreaming && !s.isSleeping) {
+        streamingCount++;
+      } else if (s.isSleeping) {
+        sleepingCount++;
+        sleepingStations.push(s);
+      }
     });
 
     activePill.textContent = `${streamingCount} Online`;
     statusBadge.textContent = streamingCount > 0 ? 'Live' : 'Hub';
+
     if (streamingCount > 0) {
       statusBadge.classList.add('live');
     } else {
@@ -470,25 +636,195 @@
     }
 
     if (streamingCount === 0) {
+      // 0 headsets are actively streaming: Show Standby Hero
       standbyHero.style.display = 'flex';
       stationsGrid.style.display = 'none';
       broadcastBar.classList.add('hidden');
+
+      if (sleepingCount > 0) {
+        // Headsets are connected but in sleep mode
+        standbyTitle.textContent = '💤 Headset(s) in Sleep Mode';
+        standbySubtitle.textContent = 'Your Quest is in standby. Put on the headset to resume live stream automatically.';
+        renderSleepingList(sleepingStations);
+        sleepingDevicesContainer?.classList.remove('hidden');
+      } else {
+        // No headsets connected or streaming
+        standbyTitle.textContent = 'Waiting for Quest Headsets...';
+        standbySubtitle.textContent = 'Ensure QuestCast app is running on your Meta Quest and connected to the same Wi-Fi.';
+        sleepingDevicesContainer?.classList.add('hidden');
+      }
+
     } else {
+      // 1 or more headsets are actively streaming
       standbyHero.style.display = 'none';
       stationsGrid.style.display = 'grid';
+      sleepingDevicesContainer?.classList.add('hidden');
 
-      // Set grid columns based on number of active headsets
       if (streamingCount === 1) {
         stationsGrid.style.gridTemplateColumns = '1fr';
-        broadcastBar.classList.add('hidden'); // 1 headset doesn't need duplicate broadcast button
+        broadcastBar.classList.add('hidden');
       } else {
         stationsGrid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(360px, 1fr))';
-        broadcastBar.classList.remove('hidden'); // 2+ headsets gets broadcast bar
+        broadcastBar.classList.remove('hidden');
       }
     }
   }
 
-  // --- Standby IP List Management ---
+  function renderSleepingList(stations) {
+    if (!sleepingList) return;
+    sleepingList.innerHTML = '';
+    stations.forEach((s) => {
+      const pill = document.createElement('span');
+      pill.className = 'sleeping-pill';
+      pill.innerHTML = `💤 ${escapeHtml(s.name)} (${escapeHtml(s.ip)})`;
+      sleepingList.appendChild(pill);
+    });
+  }
+
+  // --- Subnet Auto-Scanner Engine ---
+  async function triggerSubnetScan() {
+    if (isScanning) return;
+    isScanning = true;
+
+    // Determine target subnet base (e.g. "192.168.0.")
+    let baseSubnet = '192.168.0.';
+    if (savedIps.length > 0) {
+      const sample = savedIps[0];
+      const parts = sample.split('.');
+      if (parts.length === 4) {
+        baseSubnet = `${parts[0]}.${parts[1]}.${parts[2]}.`;
+      }
+    } else if (window.location.hostname.startsWith('192.168.')) {
+      const parts = window.location.hostname.split('.');
+      baseSubnet = `${parts[0]}.${parts[1]}.${parts[2]}.`;
+    }
+
+    setScanUi(true, `Probing local network ${baseSubnet}1 - 254...`);
+
+    let foundCount = 0;
+
+    // 1. First probe known connected headsets for /api/stations
+    for (const [ip, station] of activeStations.entries()) {
+      if (station.ws && station.ws.readyState === WebSocket.OPEN) {
+        try {
+          const resp = await fetch(`${HTTP_PROTO}//${ip}:${HTTP_PORT}/api/stations`, {
+            signal: AbortSignal.timeout(1500)
+          });
+          if (resp.ok) {
+            const peers = await resp.json();
+            if (Array.isArray(peers)) {
+              peers.forEach((p) => {
+                if (p.ip && !savedIps.includes(p.ip)) {
+                  addIp(p.ip, p.name);
+                  foundCount++;
+                }
+              });
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 2. Parallel sweep of candidates 1..254
+    const candidates = [];
+    for (let i = 1; i <= 254; i++) {
+      const ip = `${baseSubnet}${i}`;
+      if (!savedIps.includes(ip)) {
+        candidates.push(ip);
+      }
+    }
+
+    const BATCH_SIZE = 15;
+    for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
+      const batch = candidates.slice(i, i + BATCH_SIZE);
+      setScanUi(true, `Scanning ${batch[0]} - ${batch[batch.length - 1]} (Found: ${foundCount})...`);
+
+      const probePromises = batch.map((ip) => probeQuestIp(ip));
+      const results = await Promise.all(probePromises);
+
+      for (const res of results) {
+        if (res && res.ip) {
+          foundCount++;
+          addIp(res.ip);
+          // Query peers from the newly found station
+          queryPeerStations(res.ip);
+        }
+      }
+    }
+
+    isScanning = false;
+    setScanUi(false);
+
+    if (foundCount > 0) {
+      showToast(`Scan complete: Found ${foundCount} Quest Headset(s)!`);
+    } else {
+      showToast(`Scan complete: No new Quest headsets found on ${baseSubnet}x`);
+    }
+  }
+
+  function probeQuestIp(ip) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const timeoutMs = 1200;
+
+      // Probe via WebSocket to QuestCast port
+      let ws = null;
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          if (ws) {
+            try { ws.close(); } catch (_) {}
+          }
+          resolve(null);
+        }
+      }, timeoutMs);
+
+      try {
+        ws = new WebSocket(`${WS_PROTO}//${ip}:${WS_PORT}/`);
+
+        ws.onopen = () => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            try { ws.close(); } catch (_) {}
+            resolve({ ip });
+          }
+        };
+
+        ws.onerror = () => {
+          // In HTTPS, untrusted self-signed cert on an active Quest server causes an immediate error (<150ms)
+          // whereas unreachable hosts take 1-3 seconds. If it failed quickly, it is likely our Quest server!
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            try { ws.close(); } catch (_) {}
+            resolve({ ip });
+          }
+        };
+      } catch (_) {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(null);
+        }
+      }
+    });
+  }
+
+  function setScanUi(scanning, text) {
+    if (scanning) {
+      scanProgressBanner?.classList.remove('hidden');
+      if (scanStatusText) scanStatusText.textContent = text || 'Scanning Wi-Fi...';
+      if (btnScanHero) btnScanHero.disabled = true;
+      if (btnScanNetwork) btnScanNetwork.disabled = true;
+    } else {
+      scanProgressBanner?.classList.add('hidden');
+      if (btnScanHero) btnScanHero.disabled = false;
+      if (btnScanNetwork) btnScanNetwork.disabled = false;
+    }
+  }
+
+  // --- Standby IP List & SSL Trust Modal ---
   function renderStandbyIps() {
     savedIpsList.innerHTML = '';
     sslLinks.innerHTML = '';
@@ -517,12 +853,16 @@
 
       savedIpsList.appendChild(div);
 
-      // Add SSL auth link to modal
+      // Add 1-Tap SSL Trust Link
       const a = document.createElement('a');
-      a.href = `https://${ip}:8443`;
+      a.href = `https://${ip}:8443/auth`;
       a.target = '_blank';
-      a.textContent = `Trust ${ip}`;
-      a.style.marginRight = '8px';
+      a.className = 'btn-trust-pill';
+      a.innerHTML = `🔒 Trust ${ip}`;
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        openSslTrustWindow(ip);
+      });
       sslLinks.appendChild(a);
     });
   }
@@ -532,7 +872,7 @@
     const row = document.getElementById(`row_${ip.replace(/\./g, '_')}`);
     if (el) el.textContent = statusText;
     if (row) {
-      if (statusText === 'Offline' || statusText === 'Connection error') {
+      if (statusText === 'Offline') {
         row.classList.remove('online');
       } else if (statusText.includes('ready') || statusText.includes('video')) {
         row.classList.add('online');
@@ -540,9 +880,35 @@
     }
   }
 
+  function openSslTrustWindow(ip) {
+    const url = `https://${ip}:8443/auth`;
+    const popup = window.open(url, `QuestCast_Auth_${ip.replace(/\./g, '_')}`, 'width=480,height=520,resizable=yes');
+    showToast(`Opened SSL Trust window for ${ip}. Click 'Advanced' -> 'Proceed'.`);
+
+    // Poll until certificate is accepted
+    const checkInterval = setInterval(async () => {
+      try {
+        const resp = await fetch(`https://${ip}:8443/api/device-info`, {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(1000)
+        });
+        if (resp.ok) {
+          clearInterval(checkInterval);
+          showToast(`✅ ${ip} SSL Authorized! Connecting...`);
+          if (popup && !popup.closed) {
+            try { popup.close(); } catch (_) {}
+          }
+          connectToHeadset(ip);
+        }
+      } catch (_) {}
+    }, 1500);
+
+    setTimeout(() => clearInterval(checkInterval), 30000);
+  }
+
   // --- Push-to-Talk (PTT) Audio Engine ---
   function bindPttTouchEvents(button, target) {
-    // Touch events for mobile phones (iOS & Android)
+    // Mobile Touch
     button.addEventListener('touchstart', (e) => {
       e.preventDefault();
       startPtt(target);
@@ -558,7 +924,7 @@
       stopPtt();
     }, { passive: false });
 
-    // Mouse events for desktop/laptop fallback
+    // Desktop/Laptop Mouse
     button.addEventListener('mousedown', (e) => {
       e.preventDefault();
       startPtt(target);
@@ -580,7 +946,7 @@
     if (activePttTarget) return;
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      alert('Microphone access requires a Secure Context (HTTPS or localhost).\nPlease access via GitHub Pages.');
+      alert('Microphone access requires a Secure Context (HTTPS or localhost).\nPlease access via HTTPS.');
       return;
     }
 
@@ -730,9 +1096,25 @@
     }
   });
 
+  // --- Toast Notification Helper ---
+  function showToast(message) {
+    if (!toastContainer) return;
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    toastContainer.appendChild(toast);
+    setTimeout(() => {
+      try { toast.remove(); } catch (_) {}
+    }, 3000);
+  }
+
   // --- UI Event Handlers ---
   function setupGlobalEvents() {
     btnWakeLock?.addEventListener('click', toggleWakeLock);
+
+    // Auto-Scan Wi-Fi buttons
+    btnScanNetwork?.addEventListener('click', triggerSubnetScan);
+    btnScanHero?.addEventListener('click', triggerSubnetScan);
 
     // Quick Add on Standby Screen
     btnQuickAdd?.addEventListener('click', () => {

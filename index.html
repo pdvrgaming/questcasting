@@ -38,6 +38,11 @@
     <div class="header-actions">
       <span class="active-pill" id="activePill">0 Online</span>
 
+      <button class="btn-glass" id="btnScanNetwork" title="Auto-Scan Wi-Fi Subnet for Headsets">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2a10 10 0 0 1 10 10"/><path d="M12 6a6 6 0 0 1 6 6"/><circle cx="12" cy="12" r="2"/></svg>
+        <span>Scan Wi-Fi</span>
+      </button>
+
       <button class="btn-glass" id="btnWakeLock" title="Keep Screen Awake">
         <svg id="iconWakeLock" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
         <span>Wake Lock</span>
@@ -52,19 +57,42 @@
 
   <!-- Main Multi-Headset Video Stage -->
   <main class="stations-container">
-    <!-- Standby Hero: Visible only when 0 headsets are connected -->
+    <!-- Standby Hero: Visible only when 0 headsets are actively streaming -->
     <div class="standby-hero" id="standbyHero">
       <div class="standby-icon">
         <img src="./icons/icon-192.png" alt="QuestCast Standby">
       </div>
-      <h2>Waiting for Quest Headsets...</h2>
-      <p>Ensure QuestCast app is running on your Meta Quest 2 and connected to the same Wi-Fi.</p>
+      <h2 id="standbyTitle">Waiting for Quest Headsets...</h2>
+      <p id="standbySubtitle">Ensure QuestCast app is running on your Meta Quest and connected to the same Wi-Fi network.</p>
       
-      <div class="quick-add-box">
-        <input type="text" id="quickAddIp" placeholder="Enter Headset IP (e.g. 192.168.0.232)">
-        <button class="btn-glass btn-primary" id="btnQuickAdd">Connect</button>
+      <!-- Scan & Connect Action Row -->
+      <div class="standby-actions-row">
+        <button class="btn-scan-hero" id="btnScanHero">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2a10 10 0 0 1 10 10"/><path d="M12 6a6 6 0 0 1 6 6"/><circle cx="12" cy="12" r="2"/></svg>
+          <span id="btnScanHeroText">Auto-Scan Local Wi-Fi</span>
+        </button>
+
+        <div class="quick-add-box">
+          <input type="text" id="quickAddIp" placeholder="Enter Headset IP (e.g. 192.168.0.x)">
+          <button class="btn-glass btn-primary" id="btnQuickAdd">Connect</button>
+        </div>
       </div>
 
+      <!-- Live Scan Progress Banner -->
+      <div class="scan-progress-banner hidden" id="scanProgressBanner">
+        <span class="scan-spinner"></span>
+        <span id="scanStatusText">Scanning 192.168.0.1 - 254...</span>
+      </div>
+
+      <!-- Sleeping Devices List: Shown dynamically when connected headsets go to sleep -->
+      <div class="sleeping-devices-container hidden" id="sleepingDevicesContainer">
+        <div class="sleeping-header">
+          <span>💤 Headsets in Sleep Mode (Put on headset to resume casting)</span>
+        </div>
+        <div class="sleeping-list" id="sleepingList"></div>
+      </div>
+
+      <!-- Saved / Monitored IP status pills -->
       <div class="saved-ips-list" id="savedIpsList">
         <!-- Monitored IPs listed here -->
       </div>
@@ -72,7 +100,7 @@
 
     <!-- Active Connected Cards Grid -->
     <div class="stations-grid" id="stationsGrid">
-      <!-- Only CONNECTED headsets rendered here dynamically -->
+      <!-- Only ACTIVELY STREAMING headsets rendered here dynamically -->
     </div>
   </main>
 
@@ -84,7 +112,7 @@
     </button>
   </div>
 
-  <!-- Modal: Add Headset IP -->
+  <!-- Modal: Add Headset IP & SSL Trust -->
   <div class="modal-backdrop" id="modalAddStation">
     <div class="modal-sheet">
       <div class="modal-header">
@@ -102,9 +130,12 @@
           <input type="text" class="form-input" id="inputStationName" placeholder="e.g. Station 2">
         </div>
 
-        <div class="ssl-helper-banner">
-          <strong>Tip:</strong> If using HTTPS on Chrome/Safari, accept the Quest's local SSL certificate once:
-          <span id="sslLinks"></span>
+        <div class="ssl-helper-banner" id="sslHelperBanner">
+          <div class="ssl-helper-header">
+            <strong>🔒 One-Tap SSL Trust:</strong>
+          </div>
+          <p class="ssl-helper-desc">If using HTTPS on Chrome/Safari, accept the Quest's local SSL certificate once:</p>
+          <div class="ssl-links" id="sslLinks"></div>
         </div>
       </div>
       <div class="modal-footer">
@@ -113,6 +144,9 @@
       </div>
     </div>
   </div>
+
+  <!-- Toast Notification -->
+  <div class="toast-container" id="toastContainer"></div>
 
   <!-- Core JavaScript -->
   <script src="./app.js"></script>

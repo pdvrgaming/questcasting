@@ -3,7 +3,7 @@
  * Enables 100% offline PWA caching on iPhone and Android devices.
  */
 
-const CACHE_NAME = 'questcast-hub-v2';
+const CACHE_NAME = 'questcast-hub-v3';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
