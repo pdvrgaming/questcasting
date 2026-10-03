@@ -3,6 +3,8 @@ package com.questcast.app.service
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -69,6 +71,7 @@ class CastService : Service() {
 
     private var lanDiscoveryManager: com.questcast.app.discovery.LanDiscoveryManager? = null
     private var signalingRelayManager: com.questcast.app.server.SignalingRelayManager? = null
+    private var screenStateReceiver: BroadcastReceiver? = null
 
     private var config = CastConfig()
     private val clientToSocket = java.util.concurrent.ConcurrentHashMap<String, WebSocket>()
@@ -487,6 +490,33 @@ class CastService : Service() {
 
             updateState(CastState.SERVER_READY)
             Log.i(TAG, "QuestCast: servers and capture pipeline ready. Waiting for receiver at $receiverUrl")
+
+            // Register screen / proximity sleep detector to notify receivers instantly
+            val screenFilter = IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_USER_PRESENT)
+            }
+            screenStateReceiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    val action = intent?.action ?: return
+                    when (action) {
+                        Intent.ACTION_SCREEN_OFF -> {
+                            Log.i(TAG, "QuestCast: Proximity sleep / Screen OFF detected")
+                            val sleepMsg = """{"type":"headset_sleep","ip":"$ip"}"""
+                            signalingServer?.broadcast(sleepMsg)
+                            secureSignalingServer?.broadcast(sleepMsg)
+                        }
+                        Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
+                            Log.i(TAG, "QuestCast: Proximity wake / Screen ON detected")
+                            val wakeMsg = """{"type":"headset_wake","ip":"$ip"}"""
+                            signalingServer?.broadcast(wakeMsg)
+                            secureSignalingServer?.broadcast(wakeMsg)
+                        }
+                    }
+                }
+            }
+            registerReceiver(screenStateReceiver, screenFilter)
         } catch (e: Exception) {
             Log.e(TAG, "QuestCast: error starting casting pipeline", e)
             updateState(CastState.ERROR, error = e.message ?: "Failed to start pipeline")
@@ -568,6 +598,11 @@ class CastService : Service() {
             Log.e(TAG, "QuestCast: error stopping intercom manager", e)
         }
         intercomManager = null
+
+        try {
+            screenStateReceiver?.let { unregisterReceiver(it) }
+        } catch (_: Exception) {}
+        screenStateReceiver = null
 
         clientToSocket.clear()
         socketToClient.clear()

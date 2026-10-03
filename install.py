@@ -136,13 +136,6 @@ def get_connected_devices():
             elif status == "unauthorized":
                 print(f"{YELLOW}[!] Device {serial} is unauthorized. Put on the headset and click 'Allow USB Debugging'.{RESET}")
 
-    # If no devices attached, attempt connecting to known Quest IPs on wireless port 5555
-    if not devices:
-        for ip in ["192.168.0.168", "192.168.0.232"]:
-            c_code, c_out, _ = run_adb(f"connect {ip}:5555", timeout=3)
-            if "connected to" in c_out.lower():
-                devices.append({"serial": f"{ip}:5555", "model": "Quest_2", "raw": c_out})
-
     return devices
 
 
@@ -225,7 +218,7 @@ def install_and_configure_headset(device):
     run_adb(f"shell monkey -p {PACKAGE_NAME} -c android.intent.category.LAUNCHER 1", serial=serial)
 
     # 5. Enable Wireless ADB (port 5555) at the very end
-    if not serial.startswith("192.168."):
+    if ":" not in serial:
         print(f"[*] Enabling Wireless ADB port (5555)...")
         run_adb("tcpip 5555", serial=serial)
         time.sleep(1.0)
@@ -234,9 +227,9 @@ def install_and_configure_headset(device):
     # 6. Display Casting URLs
     print(f"\n{BOLD}{GREEN}[OK] Headset Configured and Ready to Cast!{RESET}")
     if ip:
-        print(f"  {BOLD}Dashboard URL:{RESET}  {CYAN}http://{ip}:8080/dashboard.html{RESET}")
-        print(f"  {BOLD}Secure URL:{RESET}     {CYAN}https://{ip}:8443/dashboard.html{RESET} (Enables Push-to-Talk Mic)")
-        print(f"  {DIM}(Tip: Opening either URL on any device auto-detects all other headsets!){RESET}")
+        print(f"  {BOLD}Direct Headset URL:{RESET}  {CYAN}https://{ip}:8443/{RESET}")
+        print(f"  {BOLD}Mobile PWA Hub URL:{RESET}  {CYAN}https://pdvrgaming.github.io/questcasting/?ip={ip}{RESET}")
+        print(f"  {DIM}(Tip: Opening the Mobile PWA Hub auto-connects to this headset instantly!){RESET}")
     else:
         print(f"  {YELLOW}Check Wi-Fi in headset settings to find its IP address.{RESET}")
 
@@ -257,7 +250,7 @@ def connect_wifi_ip(ip):
 def main():
     parser = argparse.ArgumentParser(description="QuestCast Automated Multi-Headset Installer")
     parser.add_argument("--loop", "-l", action="store_true", help="Keep running in a loop to plug and install multiple headsets one by one")
-    parser.add_argument("--connect", "-c", type=str, help="Connect to headset IP over Wi-Fi before installing (e.g. 192.168.0.168)")
+    parser.add_argument("--connect", "-c", type=str, help="Connect to headset IP over Wi-Fi before installing (e.g. <ip-address>)")
     args = parser.parse_args()
 
     print(f"{BOLD}{CYAN}")

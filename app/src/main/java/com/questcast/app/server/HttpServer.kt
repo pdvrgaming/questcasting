@@ -141,6 +141,38 @@ class HttpServer(
                         val stationsJson = stationsProvider().toByteArray(Charsets.UTF_8)
                         sendResponse(out, 200, "OK", "application/json; charset=utf-8", stationsJson, method)
                     }
+                    "/auth", "/authorize" -> {
+                        val authHtml = """
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                              <meta charset="utf-8">
+                              <meta name="viewport" content="width=device-width,initial-scale=1">
+                              <title>QuestCast Certificate Authorized</title>
+                              <style>
+                                body { background: #070b14; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; text-align: center; }
+                                .card { background: rgba(255,255,255,0.06); border: 1px solid rgba(0,229,255,0.3); border-radius: 20px; padding: 36px 24px; max-width: 380px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+                                .icon { font-size: 52px; margin-bottom: 12px; }
+                                h1 { font-size: 1.3rem; margin: 0 0 10px; color: #00f59b; font-weight: 700; }
+                                p { color: #8b9bb4; font-size: 0.9rem; line-height: 1.5; margin: 0 0 24px; }
+                                .btn { background: #00e5ff; color: #070b14; font-weight: 700; padding: 12px 24px; border-radius: 999px; text-decoration: none; display: inline-block; font-size: 0.9rem; border: none; cursor: pointer; }
+                              </style>
+                            </head>
+                            <body>
+                              <div class="card">
+                                <div class="icon">✅</div>
+                                <h1>Headset SSL Authorized!</h1>
+                                <p>Certificate is now trusted by your browser.<br>You can close this tab and return to <strong>QuestCast Operator Hub</strong>.</p>
+                                <button onclick="window.close()" class="btn">Close Tab</button>
+                              </div>
+                              <script>
+                                setTimeout(() => { try { window.close(); } catch(e){} }, 2500);
+                              </script>
+                            </body>
+                            </html>
+                        """.trimIndent().toByteArray(Charsets.UTF_8)
+                        sendResponse(out, 200, "OK", "text/html; charset=utf-8", authHtml, method)
+                    }
                     else -> {
                         val assetPath = if (path.startsWith("/")) path.substring(1) else path
                         val data = assetProvider(assetPath) ?: assetProvider("receiver/$assetPath")
