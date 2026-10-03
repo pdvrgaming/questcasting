@@ -188,6 +188,17 @@ def get_connected_devices(try_wifi_discovery=True):
             # Re-read devices
             return get_connected_devices(try_wifi_discovery=False)
 
+    # Check Windows PnP if a Quest is plugged in but in Oculus Link mode (PID 5010)
+    if not devices and unauthorized_count == 0 and sys.platform == "win32":
+        code_pnp, out_pnp, _ = run_cmd('powershell -NoProfile -Command "Get-PnpDevice -InstanceId \'*VID_2833*\' -PresentOnly | Select-Object -ExpandProperty InstanceId"')
+        if "PID_5010" in out_pnp:
+            print(f"\n{BOLD}{YELLOW}[!] Quest Headset (192.168.0.232 / 1WMHHB62ZP2121) is plugged in, but in 'Oculus Link' mode (PID 5010)!{RESET}")
+            print(f"{CYAN}[*] Quick 10-Second Fix in VR:{RESET}")
+            print(f"    1. Put on your Quest 2 headset.")
+            print(f"    2. In VR, if an 'Enable Oculus Link' popup appears, click {BOLD}'Cancel'{RESET} (or 'Disable Link').")
+            print(f"    3. When the 'Allow USB debugging?' prompt appears, check {BOLD}'Always allow'{RESET} and click {GREEN}{BOLD}'Allow'{RESET}.")
+            print(f"    4. (If no prompt appears, unplug and re-plug the USB cable while wearing the headset).\n")
+
     return devices
 
 
