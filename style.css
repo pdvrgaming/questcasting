@@ -403,12 +403,26 @@ body {
   font-weight: 600;
   background: rgba(255, 184, 0, 0.15);
   border: 1px solid rgba(255, 184, 0, 0.4);
-  color: #fff;
-  padding: 4px 10px;
+  color: #fff !important;
+  text-decoration: none !important;
+  padding: 5px 12px;
   border-radius: var(--radius-pill);
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sleeping-pill:hover {
+  background: rgba(255, 184, 0, 0.3);
+  border-color: var(--accent-amber);
+  transform: translateY(-1px);
+}
+
+.pill-arrow {
+  color: var(--accent-amber);
+  font-weight: 800;
 }
 
 .saved-ips-list {
@@ -469,6 +483,33 @@ body {
 
 .standby-ip-row.online .ip-status-badge {
   color: var(--accent-green);
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-open-row {
+  background: rgba(0, 229, 255, 0.12);
+  border: 1px solid rgba(0, 229, 255, 0.35);
+  border-radius: var(--radius-pill);
+  color: var(--accent-cyan) !important;
+  text-decoration: none !important;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
+}
+
+.btn-open-row:hover {
+  background: var(--accent-cyan);
+  color: #070b14 !important;
+  box-shadow: 0 0 10px var(--accent-cyan-glow);
 }
 
 .btn-delete-ip {
@@ -575,6 +616,25 @@ body {
   border-radius: 4px;
 }
 
+.btn-open-tab {
+  color: var(--accent-cyan) !important;
+  text-decoration: none !important;
+}
+
+.btn-open-tab:hover {
+  color: #fff !important;
+  background: rgba(0, 229, 255, 0.2) !important;
+}
+
+.btn-close-station {
+  color: var(--text-muted);
+}
+
+.btn-close-station:hover {
+  color: #ff5252 !important;
+  background: rgba(255, 82, 82, 0.15) !important;
+}
+
 /* Video Stage */
 .video-container {
   width: 100%;
@@ -593,6 +653,87 @@ body {
   object-fit: contain;
   display: block;
   background: #000;
+}
+
+/* Live Card Overlay for Standby / Connecting / SSL */
+.card-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(7, 11, 20, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 10;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+
+.card-overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  max-width: 320px;
+}
+
+.overlay-icon {
+  font-size: 2.2rem;
+  animation: pulse-icon 2s infinite ease-in-out;
+}
+
+@keyframes pulse-icon {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.1); opacity: 1; }
+}
+
+.overlay-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.overlay-desc {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.overlay-actions {
+  margin-top: 6px;
+  display: flex;
+  gap: 8px;
+}
+
+.btn-overlay-open {
+  background: linear-gradient(135deg, rgba(0, 229, 255, 0.25) 0%, rgba(0, 229, 255, 0.1) 100%);
+  border: 1px solid var(--accent-cyan);
+  border-radius: var(--radius-pill);
+  color: #fff !important;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 8px 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none !important;
+  box-shadow: 0 0 15px var(--accent-cyan-glow);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.btn-overlay-open:hover {
+  background: var(--accent-cyan);
+  color: #070b14 !important;
+  transform: translateY(-1px);
 }
 
 /* Card Footer: One prominent Talk button */
