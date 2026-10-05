@@ -486,7 +486,8 @@
         </div>
         <div class="card-badges">
           <span class="badge-hud" id="stats_${safeId}">Connecting...</span>
-          <span class="badge-battery" id="batt_${safeId}">--%</span>
+          <span class="badge-battery" id="batt_${safeId}" title="Headset Charge">--%</span>
+          <span class="badge-battery-ctrl" id="ctrlBatt_${safeId}" title="Touch Controllers Battery">🎮 L:-- R:--</span>
           <a href="${authUrl}" target="_blank" class="btn-icon btn-open-tab" id="btnOpen_${safeId}" title="Open ${station.ip} in new tab (Authorize SSL / Receiver)">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
           </a>
@@ -542,6 +543,9 @@
     btnRemove.addEventListener('click', () => removeIp(station.ip));
 
     stationsGrid.appendChild(card);
+
+    // Immediate initial poll for battery telemetry
+    pollDeviceInfo(station, card.querySelector(`#batt_${safeId}`));
   }
 
   function setCardState(station, state, customTitle, customDesc) {
@@ -712,7 +716,10 @@
   }
 
   async function pollDeviceInfo(station, battEl) {
-    if (!battEl) return;
+    if (!battEl && !station.cardEl) return;
+    const safeId = station.id ? station.id.replace(/[^a-zA-Z0-9_-]/g, '_') : station.ip.replace(/\./g, '_');
+    const ctrlBattEl = station.cardEl ? station.cardEl.querySelector(`#ctrlBatt_${safeId}`) : document.getElementById(`ctrlBatt_${safeId}`);
+
     try {
       const resp = await fetch(`${HTTP_PROTO}//${station.ip}:${HTTP_PORT}/api/device-info`, {
         cache: 'no-store',
@@ -720,8 +727,34 @@
       });
       if (resp.ok) {
         const data = await resp.json();
-        if (data.battery !== undefined && data.battery >= 0) {
-          battEl.textContent = `🔋 ${data.battery}%`;
+        if (battEl && data.battery !== undefined && data.battery >= 0) {
+          const isChg = data.isCharging ? '⚡ ' : '🔋 ';
+          battEl.textContent = `${isChg}${data.battery}%`;
+          battEl.title = `Headset Charge: ${data.battery}%${data.isCharging ? ' (Charging)' : ''}`;
+        }
+
+        if (ctrlBattEl) {
+          const hasL = data.controllerL !== undefined && data.controllerL !== null && data.controllerL >= 0;
+          const hasR = data.controllerR !== undefined && data.controllerR !== null && data.controllerR >= 0;
+
+          if (hasL && hasR) {
+            ctrlBattEl.textContent = `🎮 L:${data.controllerL}% R:${data.controllerR}%`;
+            ctrlBattEl.title = `Touch Controllers: Left ${data.controllerL}%, Right ${data.controllerR}%`;
+            ctrlBattEl.style.opacity = '1';
+          } else if (hasL) {
+            ctrlBattEl.textContent = `🎮 L:${data.controllerL}% R:--`;
+            ctrlBattEl.title = `Left Controller: ${data.controllerL}% (Right Standby/Offline)`;
+            ctrlBattEl.style.opacity = '1';
+          } else if (hasR) {
+            ctrlBattEl.textContent = `🎮 L:-- R:${data.controllerR}%`;
+            ctrlBattEl.title = `Right Controller: ${data.controllerR}% (Left Standby/Offline)`;
+            ctrlBattEl.style.opacity = '1';
+          } else {
+            ctrlBattEl.textContent = `🎮 L:-- R:--`;
+            ctrlBattEl.title = `Touch Controllers Standby / Awaiting Input`;
+            ctrlBattEl.style.opacity = '0.75';
+          }
+          ctrlBattEl.style.display = 'inline-flex';
         }
       }
     } catch (_) {}
@@ -756,6 +789,7 @@
       // 0 headsets connected or monitored: Show Standby Hero
       standbyHero.style.display = 'flex';
       stationsGrid.style.display = 'none';
+      stationsGrid.classList.remove('single-station');
       broadcastBar.classList.add('hidden');
       sleepingDevicesContainer?.classList.add('hidden');
     } else {
@@ -764,9 +798,11 @@
       stationsGrid.style.display = 'grid';
 
       if (totalCount === 1) {
-        stationsGrid.style.gridTemplateColumns = '1fr';
+        stationsGrid.classList.add('single-station');
+        stationsGrid.style.gridTemplateColumns = '';
         broadcastBar.classList.add('hidden');
       } else {
+        stationsGrid.classList.remove('single-station');
         stationsGrid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(360px, 1fr))';
         if (streamingCount >= 2) {
           broadcastBar.classList.remove('hidden');

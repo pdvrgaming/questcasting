@@ -593,6 +593,30 @@ body {
   display: grid;
   gap: 16px;
   width: 100%;
+  align-items: start;
+}
+
+/* Single Headset Focus Mode: Automatically constrained to viewport to eliminate vertical scrollbar */
+.stations-grid.single-station {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.stations-grid.single-station .station-card {
+  width: 100%;
+  max-width: min(100%, calc((100vh - 200px) * 16 / 9));
+  max-height: calc(100vh - 120px);
+  margin: 0 auto;
+}
+
+.stations-grid.single-station .video-container {
+  width: 100%;
+  max-height: calc(100vh - 205px);
+  aspect-ratio: 16 / 9;
 }
 
 /* Connected Station Card */
@@ -727,6 +751,7 @@ body {
 .video-container {
   width: 100%;
   aspect-ratio: 16 / 9;
+  max-height: calc(100vh - 235px);
   background: #000;
   position: relative;
   overflow: hidden;

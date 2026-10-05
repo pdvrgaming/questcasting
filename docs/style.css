@@ -60,18 +60,45 @@
   user-select: none;
 }
 
+html {
+  height: 100%;
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+
 body {
   font-family: var(--font-sans);
   background: var(--bg-primary);
   background-image: var(--bg-gradient);
   background-attachment: fixed;
   color: var(--text-primary);
-  min-height: 100vh;
-  min-height: -webkit-fill-available;
+  min-height: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
+  overflow-y: auto;
   letter-spacing: -0.01em;
+}
+
+/* Sleek Modern Scrollbar (discreet & non-intrusive) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-pill);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 /* Offline Banner */
@@ -254,12 +281,13 @@ body {
 /* Main Container */
 .stations-container {
   flex: 1;
-  padding: 20px;
+  padding: 16px 20px;
   max-width: 1440px;
   margin: 0 auto;
   width: 100%;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 /* Standby Hero: Shown when 0 headsets are streaming */
@@ -270,8 +298,8 @@ body {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 60px 20px;
-  gap: 16px;
+  padding: 24px 20px;
+  gap: 14px;
 }
 
 .standby-icon {
@@ -565,6 +593,30 @@ body {
   display: grid;
   gap: 16px;
   width: 100%;
+  align-items: start;
+}
+
+/* Single Headset Focus Mode: Automatically constrained to viewport to eliminate vertical scrollbar */
+.stations-grid.single-station {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.stations-grid.single-station .station-card {
+  width: 100%;
+  max-width: min(100%, calc((100vh - 200px) * 16 / 9));
+  max-height: calc(100vh - 120px);
+  margin: 0 auto;
+}
+
+.stations-grid.single-station .video-container {
+  width: 100%;
+  max-height: calc(100vh - 205px);
+  aspect-ratio: 16 / 9;
 }
 
 /* Connected Station Card */
@@ -632,6 +684,7 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 .badge-hud {
@@ -656,6 +709,24 @@ body {
   border-radius: 5px;
   border: 1px solid var(--border-live);
   font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.badge-battery-ctrl {
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .btn-open-tab {
@@ -680,6 +751,7 @@ body {
 .video-container {
   width: 100%;
   aspect-ratio: 16 / 9;
+  max-height: calc(100vh - 235px);
   background: #000;
   position: relative;
   overflow: hidden;
