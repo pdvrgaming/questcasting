@@ -3,7 +3,7 @@
  * Enables 100% offline PWA caching on iPhone and Android devices.
  */
 
-const CACHE_NAME = 'questcast-hub-v4';
+const CACHE_NAME = 'questcast-hub-v5';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -17,7 +17,7 @@ const ASSETS_TO_CACHE = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[QuestCast SW] Pre-caching offline PWA assets');
+      console.log('[QuestCast SW] Pre-caching offline PWA assets (v5)');
       return cache.addAll(ASSETS_TO_CACHE).catch((err) => {
         console.warn('[QuestCast SW] Failed pre-caching some assets:', err);
       });
@@ -40,6 +40,14 @@ self.addEventListener('fetch', (event) => {
 
   // Only handle http and https requests (safely ignore chrome-extension, blob, data, etc.)
   if (!reqUrl.startsWith('http://') && !reqUrl.startsWith('https://')) {
+    return;
+  }
+
+  const url = new URL(reqUrl);
+
+  // Force HTTPS on GitHub Pages if accessed over HTTP
+  if (url.protocol === 'http:' && (url.hostname.endsWith('github.io') || (url.hostname.includes('.') && !/^(127\.|192\.168\.|10\.|172\.)/.test(url.hostname)))) {
+    event.respondWith(Response.redirect('https:' + reqUrl.substring(5), 301));
     return;
   }
 

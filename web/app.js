@@ -13,6 +13,7 @@
   // Application State
   let savedIps = loadSavedIps();
   const activeStations = new Map(); // ip -> StationObject
+  const dismissedIps = new Set(); // Explicitly closed headsets (will not auto-reconnect)
   let isScanning = false;
   let activePttTarget = null; // null | 'broadcast' | ip
   let pttAudioContext = null;
@@ -78,13 +79,6 @@
     updateGridVisibility();
     autoRequestWakeLock();
     startMonitoringAllIps();
-
-    // If no saved IPs exist, trigger auto-discovery after 800ms
-    if (savedIps.length === 0) {
-      setTimeout(() => {
-        triggerSubnetScan();
-      }, 800);
-    }
   }
 
   // --- Auto-detect IP from URL params or Hostname ---
@@ -106,7 +100,7 @@
 
   function checkSelfHost() {
     const host = window.location.hostname;
-    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host) && host !== '127.0.0.1') {
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host) && host !== '127.0.0.1' && !dismissedIps.has(host)) {
       if (!savedIps.includes(host)) {
         savedIps.unshift(host);
         saveIps();
@@ -139,16 +133,15 @@
   // --- IP Persistence ---
   function loadSavedIps() {
     try {
+      // Purge legacy storage keys to ensure deleted devices never resurrect
+      localStorage.removeItem('questcast_saved_ips_v3');
+      localStorage.removeItem('questcast_saved_ips_v2');
+      localStorage.removeItem('questcast_saved_ips');
+
       const data = localStorage.getItem(STORAGE_KEY);
-      if (data) {
+      if (data !== null) {
         const parsed = JSON.parse(data);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-      // Migrate v3 if exists
-      const v3 = localStorage.getItem('questcast_saved_ips_v3');
-      if (v3) {
-        const parsed = JSON.parse(v3);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed; // If user deleted all cards, return []
       }
     } catch (_) {}
     return [...DEFAULT_IPS];
@@ -164,6 +157,7 @@
   function addIp(rawIp, optionalName) {
     const ip = rawIp.trim();
     if (!ip || !/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) return;
+    dismissedIps.delete(ip);
     if (!savedIps.includes(ip)) {
       savedIps.push(ip);
       saveIps();
@@ -173,6 +167,7 @@
   }
 
   function removeIp(ip) {
+    dismissedIps.add(ip);
     disconnectHeadset(ip, true);
     savedIps = savedIps.filter((item) => item !== ip);
     saveIps();
@@ -345,7 +340,7 @@
         const peers = await resp.json();
         if (Array.isArray(peers)) {
           peers.forEach((peer) => {
-            if (peer.ip && !savedIps.includes(peer.ip)) {
+            if (peer.ip && !savedIps.includes(peer.ip) && !dismissedIps.has(peer.ip)) {
               console.log(`[QuestCast Auto-Discovery] Found peer station via ${ip}:`, peer);
               addIp(peer.ip, peer.name);
             }
@@ -848,6 +843,7 @@
   async function triggerSubnetScan() {
     if (isScanning) return;
     isScanning = true;
+    dismissedIps.clear(); // Explicit user scan resets dismissed filter
 
     setScanUi(true, 'Discovering local network subnets...');
 
