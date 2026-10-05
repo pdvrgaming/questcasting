@@ -3,12 +3,14 @@
  * Enables 100% offline PWA caching on iPhone and Android devices.
  */
 
-const CACHE_NAME = 'questcast-hub-v6';
+const CACHE_NAME = 'questcast-hub-v8';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './style.css',
+  './style.css?v=7.0',
   './app.js',
+  './app.js?v=7.0',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png'
@@ -17,7 +19,7 @@ const ASSETS_TO_CACHE = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[QuestCast SW] Pre-caching offline PWA assets (v6)');
+      console.log('[QuestCast SW] Pre-caching offline PWA assets (v8)');
       return cache.addAll(ASSETS_TO_CACHE).catch((err) => {
         console.warn('[QuestCast SW] Failed pre-caching some assets:', err);
       });
@@ -56,8 +58,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  const url = new URL(reqUrl);
-
   // Do not intercept WebSockets, API calls, or local private LAN IPs
   if (
     url.protocol.startsWith('ws') ||
@@ -69,40 +69,24 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-First strategy for static PWA shell assets
+  // Network-First with Cache Fallback for HTML, CSS, JS when online
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        // Return cached version immediately, but refresh cache in background
-        fetch(event.request)
-          .then((networkResponse) => {
-            if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
-              caches.open(CACHE_NAME).then((cache) => {
-                cache.put(event.request, networkResponse);
-              });
-            }
-          })
-          .catch(() => {});
-        return cachedResponse;
-      }
-
-      // If not cached, fetch from network and cache
-      return fetch(event.request)
-        .then((networkResponse) => {
-          if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-            return networkResponse;
-          }
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200 && (networkResponse.type === 'basic' || networkResponse.type === 'cors')) {
           const responseToCache = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
-          return networkResponse;
-        })
-        .catch(() => {
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+        }
+        return networkResponse;
+      })
+      .catch(() => {
+        // Fallback to cache if network is offline
+        return caches.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) return cachedResponse;
           if (event.request.mode === 'navigate') {
             return caches.match('./index.html');
           }
         });
-    })
+      })
   );
 });
