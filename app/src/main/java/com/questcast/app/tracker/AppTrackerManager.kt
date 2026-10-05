@@ -297,8 +297,8 @@ class AppTrackerManager(private val context: Context) {
 
     private fun openNewSession(packageName: String, timestamp: Long) {
         val appName = resolveAppName(packageName)
-        val dateStr = dateFormat.format(Date(timestamp))
-        val formattedStart = timeFormat.format(Date(timestamp))
+        val dateStr = synchronized(dateFormat) { dateFormat.format(Date(timestamp)) }
+        val formattedStart = synchronized(timeFormat) { timeFormat.format(Date(timestamp)) }
 
         val record = AppSessionRecord(
             date = dateStr,
@@ -320,7 +320,7 @@ class AppTrackerManager(private val context: Context) {
     private fun closeSession(record: AppSessionRecord) {
         val now = System.currentTimeMillis()
         record.endTimeMs = now
-        record.formattedEndTime = timeFormat.format(Date(now))
+        record.formattedEndTime = synchronized(timeFormat) { timeFormat.format(Date(now)) }
         record.durationSeconds = ((now - record.startTimeMs) / 1000).coerceAtLeast(1)
         record.isActive = false
         _auditLog.value = sessions.toList()

@@ -173,7 +173,7 @@
   }
 
   function removeIp(ip) {
-    disconnectHeadset(ip);
+    disconnectHeadset(ip, true);
     savedIps = savedIps.filter((item) => item !== ip);
     saveIps();
     updateGridVisibility();
@@ -193,27 +193,41 @@
       return;
     }
 
-    disconnectHeadset(ip);
+    disconnectHeadset(ip, false);
 
-    const station = {
-      ip,
-      name: customName || `Quest 2 (${ip.substring(ip.lastIndexOf('.') + 1)})`,
-      ws: null,
-      pc: null,
-      cardEl: null,
-      videoEl: null,
-      statsInterval: null,
-      reconnectTimer: null,
-      lastBytes: 0,
-      lastTs: 0,
-      lastVideoTime: -1,
-      consecutiveZeroFps: 0,
-      isStreaming: false,
-      isSleeping: false,
-      sslNeeded: false,
-      pendingCandidates: []
-    };
-    activeStations.set(ip, station);
+    let station = existing;
+    if (!station) {
+      station = {
+        ip,
+        name: customName || `Quest 2 (${ip.substring(ip.lastIndexOf('.') + 1)})`,
+        ws: null,
+        pc: null,
+        cardEl: null,
+        videoEl: null,
+        statsInterval: null,
+        reconnectTimer: null,
+        lastBytes: 0,
+        lastTs: 0,
+        lastVideoTime: -1,
+        consecutiveZeroFps: 0,
+        isStreaming: false,
+        isSleeping: false,
+        sslNeeded: false,
+        pendingCandidates: []
+      };
+      activeStations.set(ip, station);
+    } else {
+      if (customName) station.name = customName;
+      station.ws = null;
+      station.pc = null;
+      station.lastBytes = 0;
+      station.lastTs = 0;
+      station.lastVideoTime = -1;
+      station.consecutiveZeroFps = 0;
+      station.isStreaming = false;
+      station.isSleeping = false;
+      station.pendingCandidates = [];
+    }
 
     // Mount card in grid immediately upon connecting!
     attachStationCardToGrid(station);
@@ -295,7 +309,7 @@
     }, 4000);
   }
 
-  function disconnectHeadset(ip) {
+  function disconnectHeadset(ip, removeCard = false) {
     const station = activeStations.get(ip);
     if (!station) return;
 
@@ -310,11 +324,13 @@
       try { station.pc.close(); } catch (_) {}
       station.pc = null;
     }
-    if (station.cardEl && station.cardEl.parentNode) {
-      station.cardEl.parentNode.removeChild(station.cardEl);
+    if (removeCard) {
+      if (station.cardEl && station.cardEl.parentNode) {
+        station.cardEl.parentNode.removeChild(station.cardEl);
+      }
+      activeStations.delete(ip);
+      updateGridVisibility();
     }
-    activeStations.delete(ip);
-    updateGridVisibility();
   }
 
   // --- Query /api/stations to automatically find all LAN peers ---
@@ -594,6 +610,14 @@
       }
     }
   }
+
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) {
+      document.querySelectorAll('.station-card.fullscreen-active').forEach((c) => {
+        c.classList.remove('fullscreen-active');
+      });
+    }
+  });
 
   // --- Real-time Stats & Standby Detection Engine ---
   function startStatsMonitoring(station) {

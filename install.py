@@ -54,7 +54,6 @@ def find_adb():
     local_app_data = os.environ.get("LOCALAPPDATA", "")
     candidates = [
         Path(local_app_data) / "Android" / "Sdk" / "platform-tools" / "adb.exe",
-        Path("C:/Users/PDVR gaming/AppData/Local/Android/Sdk/platform-tools/adb.exe"),
         Path(os.path.expanduser("~")) / "AppData" / "Local" / "Android" / "Sdk" / "platform-tools" / "adb.exe",
     ]
     for c in candidates:
@@ -192,7 +191,9 @@ def get_connected_devices(try_wifi_discovery=True):
     if not devices and unauthorized_count == 0 and sys.platform == "win32":
         code_pnp, out_pnp, _ = run_cmd('powershell -NoProfile -Command "Get-PnpDevice -InstanceId \'*VID_2833*\' -PresentOnly | Select-Object -ExpandProperty InstanceId"')
         if "PID_5010" in out_pnp:
-            print(f"\n{BOLD}{YELLOW}[!] Quest Headset (192.168.0.232 / 1WMHHB62ZP2121) is plugged in, but in 'Oculus Link' mode (PID 5010)!{RESET}")
+            dev_serial_match = re.search(r'VID_2833&PID_5010\\([A-Za-z0-9_-]+)', out_pnp)
+            dev_info = f" ({dev_serial_match.group(1)})" if dev_serial_match else ""
+            print(f"\n{BOLD}{YELLOW}[!] Meta Quest Headset{dev_info} is plugged in, but in 'Oculus Link' mode (PID 5010)!{RESET}")
             print(f"{CYAN}[*] Quick 10-Second Fix in VR:{RESET}")
             print(f"    1. Put on your Quest 2 headset.")
             print(f"    2. In VR, if an 'Enable Oculus Link' popup appears, click {BOLD}'Cancel'{RESET} (or 'Disable Link').")

@@ -342,6 +342,8 @@ class WebRtcManager(
                 eglBase = null
             } catch (e: Exception) {
                 Log.e(TAG, "QuestCast: error releasing WebRTC factory", e)
+            } finally {
+                executor.shutdown()
             }
         }
     }

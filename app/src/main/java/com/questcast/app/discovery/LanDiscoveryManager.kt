@@ -303,7 +303,14 @@ class LanDiscoveryManager(
                     }
                 }
                 probePool.shutdown()
-                probePool.awaitTermination(3, TimeUnit.SECONDS)
+                try {
+                    if (!probePool.awaitTermination(6, TimeUnit.SECONDS)) {
+                        probePool.shutdownNow()
+                    }
+                } catch (_: InterruptedException) {
+                    probePool.shutdownNow()
+                    Thread.currentThread().interrupt()
+                }
             } catch (_: Exception) {}
         }, "QuestCast-SubnetProber").apply {
             isDaemon = true

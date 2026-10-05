@@ -262,6 +262,7 @@ class HttpServer(
         headers.append("Access-Control-Allow-Methods: GET, POST, HEAD, OPTIONS\r\n")
         headers.append("Access-Control-Allow-Headers: *\r\n")
         headers.append("Access-Control-Allow-Private-Network: true\r\n")
+        headers.append("Access-Control-Max-Age: 86400\r\n")
         headers.append("Content-Length: 0\r\n")
         headers.append("Connection: close\r\n")
         headers.append("\r\n")

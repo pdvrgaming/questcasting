@@ -32,6 +32,7 @@ import com.questcast.app.audio.IntercomManager
 import java.net.URLDecoder
 import org.java_websocket.WebSocket
 import org.webrtc.PeerConnection
+import org.json.JSONObject
 
 class CastService : Service() {
 
@@ -231,7 +232,13 @@ class CastService : Service() {
                 val curApp = appTrackerManager?.currentApp?.value
                 val appName = curApp?.appName ?: "Standby"
                 _currentApp.value = curApp
-                """{"state":"${d.state}","ip":"${d.ipAddress}","receivers":${clientToSocket.size},"fps":${d.fps},"currentGame":"$appName"}"""
+                JSONObject().apply {
+                    put("state", d.state.toString())
+                    put("ip", d.ipAddress)
+                    put("receivers", clientToSocket.size)
+                    put("fps", d.fps)
+                    put("currentGame", appName)
+                }.toString()
             }
             val auditLogProvider: (String?) -> String = { queryParams ->
                 val params = parseQueryParams(queryParams)
@@ -262,7 +269,21 @@ class CastService : Service() {
                 val defaultStationName = "Quest 2 ($uniqueSuffix)"
                 val prefs = getSharedPreferences("questcast_prefs", Context.MODE_PRIVATE)
                 val stationName = prefs.getString("station_name", defaultStationName) ?: defaultStationName
-                """{"stationName":"$stationName","model":"${Build.MODEL}","serial":"$uniqueId","battery":$batteryPct,"isCharging":$isCharging,"ip":"${d.ipAddress}","httpPort":${config.httpPort},"httpsPort":${config.httpsPort},"wsPort":${config.wsPort},"wssPort":${config.wssPort},"state":"${d.state}","currentGame":"${curApp?.appName ?: "Standby"}","receivers":${clientToSocket.size}}"""
+                JSONObject().apply {
+                    put("stationName", stationName)
+                    put("model", Build.MODEL)
+                    put("serial", uniqueId)
+                    put("battery", batteryPct)
+                    put("isCharging", isCharging)
+                    put("ip", d.ipAddress)
+                    put("httpPort", config.httpPort)
+                    put("httpsPort", config.httpsPort)
+                    put("wsPort", config.wsPort)
+                    put("wssPort", config.wssPort)
+                    put("state", d.state.toString())
+                    put("currentGame", curApp?.appName ?: "Standby")
+                    put("receivers", clientToSocket.size)
+                }.toString()
             }
             val auditClearHandler: () -> Unit = {
                 appTrackerManager?.clearAuditLog()
@@ -622,7 +643,7 @@ class CastService : Service() {
                 PowerManager.PARTIAL_WAKE_LOCK,
                 "QuestCast::CastWakeLock"
             )?.apply {
-                acquire(10 * 60 * 1000L /* 10 minutes max or refreshed */)
+                acquire()
             }
 
             val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
