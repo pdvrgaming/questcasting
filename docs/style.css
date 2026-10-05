@@ -281,8 +281,8 @@ body {
 /* Main Container */
 .stations-container {
   flex: 1;
-  padding: 16px 20px;
-  max-width: 1440px;
+  padding: 12px 20px;
+  max-width: 1720px;
   margin: 0 auto;
   width: 100%;
   display: flex;
@@ -588,35 +588,63 @@ body {
   color: #ef4444;
 }
 
-/* Stations Grid */
+/* Stations Grid Base */
 .stations-grid {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
   display: grid;
+  gap: 16px;
+}
+
+/* 1 Connected Headset: Fit to Screen, Large, Centered (Not One-Sided) */
+.stations-grid.single-station {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  margin: 0 auto;
+}
+
+.stations-grid.single-station .station-card {
+  width: 100%;
+  max-width: min(100%, calc((100vh - 180px) * 16 / 9));
+  max-height: calc(100vh - 105px);
+  margin: 0 auto;
+  box-shadow: 0 16px 48px -8px rgba(0, 0, 0, 0.7), 0 0 0 1px var(--border-medium);
+}
+
+.stations-grid.single-station .video-container {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: calc(100vh - 195px);
+}
+
+/* 2 or More Connected Headsets: Strictly 2 Per Line (Side-by-Side if 2, 2 per row for any number) */
+.stations-grid.multi-station {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   gap: 16px;
   width: 100%;
   align-items: start;
 }
 
-/* Single Headset Focus Mode: Automatically constrained to viewport to eliminate vertical scrollbar */
-.stations-grid.single-station {
-  display: flex;
-  justify-content: center;
-  align-items: center;
+.stations-grid.multi-station .station-card {
   width: 100%;
-  flex: 1;
-  min-height: 0;
+  min-width: 0;
 }
 
-.stations-grid.single-station .station-card {
+.stations-grid.multi-station .video-container {
   width: 100%;
-  max-width: min(100%, calc((100vh - 200px) * 16 / 9));
-  max-height: calc(100vh - 120px);
-  margin: 0 auto;
-}
-
-.stations-grid.single-station .video-container {
-  width: 100%;
-  max-height: calc(100vh - 205px);
   aspect-ratio: 16 / 9;
+}
+
+@media (max-width: 680px) {
+  .stations-grid.multi-station {
+    grid-template-columns: 1fr !important;
+  }
 }
 
 /* Connected Station Card */
@@ -654,37 +682,46 @@ body {
 
 /* Card Header */
 .card-header {
-  padding: 9px 14px;
+  padding: 8px 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   background: var(--bg-card-header);
   border-bottom: 1px solid var(--border-subtle);
+  gap: 10px;
+  min-height: 46px;
 }
 
 .station-meta {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .station-name {
   font-size: 0.88rem;
   font-weight: 700;
   color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .station-ip {
   font-size: 0.72rem;
   font-family: var(--font-mono);
   color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .card-badges {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .badge-hud {

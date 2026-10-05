@@ -789,21 +789,28 @@
       // 0 headsets connected or monitored: Show Standby Hero
       standbyHero.style.display = 'flex';
       stationsGrid.style.display = 'none';
-      stationsGrid.classList.remove('single-station');
+      stationsGrid.className = 'stations-grid';
       broadcastBar.classList.add('hidden');
       sleepingDevicesContainer?.classList.add('hidden');
     } else {
       // 1 or more headsets connected: Always show grid!
       standbyHero.style.display = 'none';
-      stationsGrid.style.display = 'grid';
 
       if (totalCount === 1) {
-        stationsGrid.classList.add('single-station');
+        // 1 connected: Fit to screen & center horizontally (not one-sided)
+        stationsGrid.className = 'stations-grid single-station';
+        stationsGrid.style.display = 'flex';
+        stationsGrid.style.justifyContent = 'center';
+        stationsGrid.style.alignItems = 'center';
         stationsGrid.style.gridTemplateColumns = '';
         broadcastBar.classList.add('hidden');
       } else {
-        stationsGrid.classList.remove('single-station');
-        stationsGrid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(360px, 1fr))';
+        // 2 or more connected: Exactly 2 per line side-by-side
+        stationsGrid.className = 'stations-grid multi-station';
+        stationsGrid.style.display = 'grid';
+        stationsGrid.style.justifyContent = '';
+        stationsGrid.style.alignItems = '';
+        stationsGrid.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
         if (streamingCount >= 2) {
           broadcastBar.classList.remove('hidden');
         } else {
