@@ -275,7 +275,8 @@ def install_and_configure_headset(device):
     run_adb(f"shell pm grant {PACKAGE_NAME} android.permission.RECORD_AUDIO", serial=serial)
     run_adb(f"shell pm grant {PACKAGE_NAME} android.permission.POST_NOTIFICATIONS", serial=serial)
     run_adb(f"shell appops set {PACKAGE_NAME} GET_USAGE_STATS allow", serial=serial)
-    print(f"{GREEN}[+] Permissions granted (Mic + Audit Log Usage Stats).{RESET}")
+    run_adb(f"shell pm grant {PACKAGE_NAME} android.permission.DUMP", serial=serial)
+    print(f"{GREEN}[+] Permissions granted (Mic, Usage Stats, Controller Battery DUMP).{RESET}")
 
     # 4. Launch App
     print(f"[*] Launching QuestCast...")

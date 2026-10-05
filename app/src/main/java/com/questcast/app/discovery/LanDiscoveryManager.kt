@@ -24,6 +24,8 @@ data class DiscoveredStation(
     val wssPort: Int = 8089,
     val currentGame: String = "Standby",
     val battery: Int = -1,
+    val controllerL: Int = -1,
+    val controllerR: Int = -1,
     val isSelf: Boolean = false,
     val lastSeenTimestamp: Long = System.currentTimeMillis()
 ) {
@@ -37,6 +39,8 @@ data class DiscoveredStation(
         put("wssPort", wssPort)
         put("currentGame", currentGame)
         put("battery", battery)
+        if (controllerL >= 0) put("controllerL", controllerL)
+        if (controllerR >= 0) put("controllerR", controllerR)
         put("isSelf", isSelf)
         put("lastSeen", lastSeenTimestamp)
     }
@@ -51,7 +55,8 @@ class LanDiscoveryManager(
     private val wsPort: Int = 8088,
     private val wssPort: Int = 8089,
     private val currentGameProvider: () -> String = { "Standby" },
-    private val batteryProvider: () -> Int = { -1 }
+    private val batteryProvider: () -> Int = { -1 },
+    private val controllerBatteryProvider: () -> Pair<Int, Int> = { -1 to -1 }
 ) {
     companion object {
         private const val TAG = "QuestCast"
@@ -202,6 +207,8 @@ class LanDiscoveryManager(
                 wssPort = json.optInt("wssPort", 8089),
                 currentGame = json.optString("game", "Standby"),
                 battery = json.optInt("battery", -1),
+                controllerL = json.optInt("controllerL", -1),
+                controllerR = json.optInt("controllerR", -1),
                 isSelf = false,
                 lastSeenTimestamp = System.currentTimeMillis()
             )
@@ -219,6 +226,7 @@ class LanDiscoveryManager(
         val myIp = NetworkUtils.getLocalIpAddress()
         if (myIp == "127.0.0.1" || myIp.isBlank()) return
 
+        val ctrlBatt = controllerBatteryProvider()
         val beaconJson = JSONObject().apply {
             put("questcast", true)
             put("id", selfId)
@@ -230,6 +238,8 @@ class LanDiscoveryManager(
             put("wssPort", wssPort)
             put("game", currentGameProvider())
             put("battery", batteryProvider())
+            if (ctrlBatt.first >= 0) put("controllerL", ctrlBatt.first)
+            if (ctrlBatt.second >= 0) put("controllerR", ctrlBatt.second)
             put("timestamp", System.currentTimeMillis())
         }.toString()
 
@@ -341,6 +351,8 @@ class LanDiscoveryManager(
                     wssPort = json.optInt("wssPort", 8089),
                     currentGame = json.optString("currentGame", "Standby"),
                     battery = json.optInt("battery", -1),
+                    controllerL = json.optInt("controllerL", -1),
+                    controllerR = json.optInt("controllerR", -1),
                     isSelf = false,
                     lastSeenTimestamp = System.currentTimeMillis()
                 )
@@ -387,6 +399,7 @@ class LanDiscoveryManager(
 
     fun getAllStations(): List<DiscoveredStation> {
         val myIp = NetworkUtils.getLocalIpAddress()
+        val ctrlBatt = controllerBatteryProvider()
         val selfStation = DiscoveredStation(
             id = selfId,
             name = selfName,
@@ -397,6 +410,8 @@ class LanDiscoveryManager(
             wssPort = wssPort,
             currentGame = currentGameProvider(),
             battery = batteryProvider(),
+            controllerL = ctrlBatt.first,
+            controllerR = ctrlBatt.second,
             isSelf = true,
             lastSeenTimestamp = System.currentTimeMillis()
         )

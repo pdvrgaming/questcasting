@@ -259,6 +259,7 @@ class CastService : Service() {
                 val bm = getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
                 val batteryPct = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
                 val isCharging = bm?.isCharging ?: false
+                val ctrlBatt = com.questcast.app.util.ControllerBatteryUtils.getBatteryLevels(applicationContext)
                 val d = _diagnostics.value
                 val curApp = appTrackerManager?.currentApp?.value
                 val androidId = try {
@@ -275,6 +276,8 @@ class CastService : Service() {
                     put("serial", uniqueId)
                     put("battery", batteryPct)
                     put("isCharging", isCharging)
+                    if (ctrlBatt.left != null) put("controllerL", ctrlBatt.left)
+                    if (ctrlBatt.right != null) put("controllerR", ctrlBatt.right)
                     put("ip", d.ipAddress)
                     put("httpPort", config.httpPort)
                     put("httpsPort", config.httpsPort)
@@ -312,7 +315,11 @@ class CastService : Service() {
                 wsPort = config.wsPort,
                 wssPort = config.wssPort,
                 currentGameProvider = { appTrackerManager?.currentApp?.value?.appName ?: "Standby" },
-                batteryProvider = { bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1 }
+                batteryProvider = { bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1 },
+                controllerBatteryProvider = {
+                    val cb = com.questcast.app.util.ControllerBatteryUtils.getBatteryLevels(applicationContext)
+                    Pair(cb.left ?: -1, cb.right ?: -1)
+                }
             ).apply {
                 start()
             }
