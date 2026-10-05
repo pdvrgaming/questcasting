@@ -3,14 +3,14 @@
  * Enables 100% offline PWA caching on iPhone and Android devices.
  */
 
-const CACHE_NAME = 'questcast-hub-v8';
+const CACHE_NAME = 'questcast-hub-v9';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './style.css',
-  './style.css?v=7.0',
+  './style.css?v=8.0',
   './app.js',
-  './app.js?v=7.0',
+  './app.js?v=8.0',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png'
@@ -19,7 +19,7 @@ const ASSETS_TO_CACHE = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[QuestCast SW] Pre-caching offline PWA assets (v8)');
+      console.log('[QuestCast SW] Pre-caching offline PWA assets (v9)');
       return cache.addAll(ASSETS_TO_CACHE).catch((err) => {
         console.warn('[QuestCast SW] Failed pre-caching some assets:', err);
       });
